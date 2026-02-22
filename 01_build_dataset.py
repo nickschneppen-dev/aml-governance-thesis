@@ -17,15 +17,23 @@ selects 50 subjects that test both False Positive AND False Negative reasoning.
        D1  Sleeper         (7): Guilty but low volume + no graph anomalies
        D2  Smurf           (7): Guilty but high fan-in + small avg amounts
 
-Outputs:
-  1. thesis_transactions.csv  -- all transactions for the 50 selected users
-  2. knowledge_base.json      -- mock "internet" with entity profiles & news
-  3. ground_truth.csv          -- MLflow grading key
+Outputs (all files written with a dataset prefix; test also writes bare copies):
+  {dataset}_transactions.csv       -- raw transaction rows for the 50 users
+  {dataset}_client_list.csv        -- agent-safe client IDs only
+  {dataset}_client_metrics.json    -- pre-computed metrics from full dataset
+  {dataset}_knowledge_base.json    -- mock "internet" articles
+  {dataset}_ground_truth.csv       -- MLflow grading key (never shown to agents)
+
+Run order:
+    python 01_build_dataset.py --dataset test   # generate test set (default)
+    python 01_build_dataset.py --dataset train  # generate train set (requires test_client_list.csv)
 """
 
 from __future__ import annotations
 
+import argparse
 import json
+import shutil
 from pathlib import Path
 
 import pandas as pd
@@ -33,14 +41,29 @@ import pandas as pd
 # ---------------------------------------------------------------------------
 # Config
 # ---------------------------------------------------------------------------
-SRC_CSV = Path("AMLNet_August 2025.csv")
-OUT_TRANSACTIONS = Path("thesis_transactions.csv")
-OUT_KNOWLEDGE = Path("knowledge_base.json")
-OUT_GROUND_TRUTH = Path("ground_truth.csv")
-OUT_CLIENT_LIST = Path("client_list.csv")
-OUT_CLIENT_METRICS = Path("client_metrics.json")
+parser = argparse.ArgumentParser(description="Generate the AML thesis benchmark.")
+parser.add_argument(
+    "--dataset",
+    choices=["train", "test"],
+    default="test",
+    help="Dataset prefix for output files (default: test). "
+         "Writes {dataset}_client_list.csv, {dataset}_knowledge_base.json, etc.",
+)
+args = parser.parse_args()
 
-SEED = 42
+SRC_CSV = Path("AMLNet_August 2025.csv")
+
+# All outputs use the dataset prefix so train and test never overwrite each other.
+DATASET_PREFIX = f"{args.dataset}_"
+OUT_TRANSACTIONS  = Path(f"{DATASET_PREFIX}transactions.csv")
+OUT_KNOWLEDGE     = Path(f"{DATASET_PREFIX}knowledge_base.json")
+OUT_GROUND_TRUTH  = Path(f"{DATASET_PREFIX}ground_truth.csv")
+OUT_CLIENT_LIST   = Path(f"{DATASET_PREFIX}client_list.csv")
+OUT_CLIENT_METRICS = Path(f"{DATASET_PREFIX}client_metrics.json")
+
+# Different random seeds per dataset so Group B (random bottom-quartile
+# innocents) draws different clients for train vs test.
+SEED = 42 if args.dataset == "test" else 123
 
 # ---------------------------------------------------------------------------
 # 1. Load data
@@ -107,6 +130,18 @@ print(f"    avg_amt: ${guilty_all['avg_amount'].min():,.0f}-${guilty_all['avg_am
 print("\nSelecting subjects ...")
 
 selected: set[str] = set()
+
+# For the train dataset, pre-exclude all test set clients so that train always
+# picks the next-best candidates from each group (no overlap with test).
+if args.dataset == "train":
+    test_list = Path("test_client_list.csv")
+    if not test_list.exists():
+        print("ERROR: test_client_list.csv not found.")
+        print("Run 'python 01_build_dataset.py --dataset test' first.")
+        raise SystemExit(1)
+    test_ids = pd.read_csv(test_list)["client_id"].tolist()
+    selected.update(test_ids)
+    print(f"  Pre-excluded {len(test_ids)} test-set clients from all selection pools.\n")
 
 
 def pick(pool: pd.DataFrame, n: int, label: str) -> list[str]:
@@ -177,7 +212,7 @@ all_ids = ctrl_guilty_ids + ctrl_innocent_ids + fp_ids + fn_ids
 assert len(all_ids) == 50, f"Expected 50 IDs, got {len(all_ids)}"
 
 # ---------------------------------------------------------------------------
-# 4. Save thesis_transactions.csv
+# 4. Save transactions CSV
 # ---------------------------------------------------------------------------
 thesis_txns = df[df["nameOrig"].isin(all_ids)].copy()
 thesis_txns.to_csv(OUT_TRANSACTIONS, index=False)
@@ -1390,4 +1425,21 @@ _summarise("D2: FN Smurf (fan-in+small)", smurf_ids)
 print(f"\n  Total: {len(all_ids)} subjects")
 print(f"  Ground truth: {len(gt_df[gt_df['is_money_laundering']==True])} guilty, "
       f"{len(gt_df[gt_df['is_money_laundering']==False])} innocent")
+
+# ---------------------------------------------------------------------------
+# 8. Backward-compat bare copies (test dataset only)
+#    Keeps the original unprefixed filenames working for any existing tooling.
+# ---------------------------------------------------------------------------
+if args.dataset == "test":
+    bare_copies = [
+        (OUT_CLIENT_LIST,    Path("client_list.csv")),
+        (OUT_CLIENT_METRICS, Path("client_metrics.json")),
+        (OUT_KNOWLEDGE,      Path("knowledge_base.json")),
+        (OUT_GROUND_TRUTH,   Path("ground_truth.csv")),
+    ]
+    print("\nWriting backward-compat bare-name copies ...")
+    for src, dst in bare_copies:
+        shutil.copy(src, dst)
+        print(f"  [OK] {dst}")
+
 print("\nDone.")

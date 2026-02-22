@@ -38,16 +38,15 @@ load_dotenv()
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
-RESULTS_DIR = Path("results")
-SUMMARY_FILE = RESULTS_DIR / "summary.csv"
-GROUND_TRUTH_FILE = Path("ground_truth.csv")
-EVALUATION_FILE = RESULTS_DIR / "evaluation.csv"
-
 CLASSIFICATION_THRESHOLD = 50  # score >= 50 → predict guilty
 EXPERIMENT_NAME = "aml-governance"
 
-MODES = ["int", "hier"]
-MODE_LABELS = {"int": "intrinsic", "hier": "hierarchical"}
+MODES = ["int", "hier", "ctx"]
+MODE_LABELS = {
+    "int": "intrinsic",
+    "hier": "hierarchical",
+    "ctx": "context_engineered",
+}
 
 # Display-friendly group ordering
 GROUP_ORDER = [
@@ -65,10 +64,13 @@ GROUP_ORDER = [
 # ---------------------------------------------------------------------------
 # Data loading
 # ---------------------------------------------------------------------------
-def load_and_merge() -> pd.DataFrame:
+def load_and_merge(summary_file: Path, ground_truth_file: Path) -> pd.DataFrame:
     """Load summary.csv and ground_truth.csv, merge on client_id."""
-    summary = pd.read_csv(SUMMARY_FILE)
-    ground_truth = pd.read_csv(GROUND_TRUTH_FILE)
+    summary = pd.read_csv(summary_file)
+    # Drop duplicate rows produced when a failed client is re-run on resume.
+    # The last row for each client_id is the successful one.
+    summary = summary.drop_duplicates(subset="client_id", keep="last")
+    ground_truth = pd.read_csv(ground_truth_file)
 
     # Normalise is_money_laundering to int (0/1)
     ground_truth["is_money_laundering"] = (
@@ -92,12 +94,12 @@ def load_and_merge() -> pd.DataFrame:
     return merged
 
 
-def load_reasoning(mode: str) -> dict[str, str]:
+def load_reasoning(results_dir: Path, mode: str) -> dict[str, str]:
     """Load final_output.reasoning from per-client JSON files.
 
     Returns {client_id: reasoning_text}.
     """
-    mode_dir = RESULTS_DIR / MODE_LABELS[mode]
+    mode_dir = results_dir / MODE_LABELS[mode]
     reasoning = {}
     if not mode_dir.exists():
         return reasoning
@@ -168,6 +170,11 @@ def compute_metrics(df: pd.DataFrame, prefix: str) -> dict:
     rejection_rate = (valid[review_col] == "REJECT").mean()
     avg_revisions = valid[revision_col].mean()
     avg_confidence = valid[conf_col].mean() if conf_col in valid.columns else None
+    # Consensus: governance loop reached APPROVE (reviewer signed off).
+    # Cases that hit MAX_REVISIONS still with REJECT are unapproved outputs.
+    consensus_rate = (valid[review_col] == "APPROVE").mean()
+    # Cost proxy: both modes share 3 base LLM calls; each revision cycle adds 2.
+    expected_llm_calls = 3.0 + 2.0 * avg_revisions
 
     metrics = {
         "n": n,
@@ -184,6 +191,8 @@ def compute_metrics(df: pd.DataFrame, prefix: str) -> dict:
         "rejection_rate": rejection_rate,
         "avg_revisions": avg_revisions,
         "avg_confidence": avg_confidence,
+        "consensus_rate": consensus_rate,
+        "expected_llm_calls": expected_llm_calls,
     }
 
     # ── Level 3: Per-group breakdown ──
@@ -205,6 +214,9 @@ def compute_metrics(df: pd.DataFrame, prefix: str) -> dict:
             .abs()
             .mean()
         )
+        metrics[f"group/{safe_label}/consensus_rate"] = (
+            g[review_col] == "APPROVE"
+        ).mean()
         metrics[f"group/{safe_label}/n"] = len(g)
 
     return metrics
@@ -238,6 +250,12 @@ def build_evaluation_df(df: pd.DataFrame) -> pd.DataFrame:
         # Correct classification?
         out[f"{prefix}_correct"] = (
             out[f"{prefix}_predicted_guilty"] == out["is_money_laundering"]
+        ).astype(int)
+
+        # Did governance reach consensus (reviewer signed off with APPROVE)?
+        review_col = f"{prefix}_review_decision"
+        out[f"{prefix}_consensus_reached"] = (
+            out[review_col] == "APPROVE"
         ).astype(int)
 
     return out
@@ -284,7 +302,7 @@ is adverse (or vice versa), the reasoning MUST acknowledge this tension.
 
 
 def evaluate_reasoning(
-    df: pd.DataFrame, prefix: str, run_name: str
+    df: pd.DataFrame, results_dir: Path, prefix: str, run_name: str
 ) -> None:
     """Run mlflow.evaluate() on reasoning text for one governance mode.
 
@@ -292,7 +310,7 @@ def evaluate_reasoning(
     Results are logged as an MLflow evaluation artifact.
     """
     mode_label = MODE_LABELS[prefix]
-    reasoning_map = load_reasoning(prefix)
+    reasoning_map = load_reasoning(results_dir, prefix)
 
     if not reasoning_map:
         print(f"  No reasoning JSONs found for {mode_label}, skipping LLM evaluation.")
@@ -329,7 +347,7 @@ def evaluate_reasoning(
             "data points, and addresses conflicting signals."
         ),
         grading_prompt=REASONING_JUDGE_PROMPT,
-        model=f"gemini:/{os.getenv('LLM_MODEL', 'gemini-3-pro-preview')}",
+        model=f"openai:/{os.getenv('LLM_MODEL', 'gpt-4o-mini')}",
         parameters={"temperature": 0},
         greater_is_better=True,
         aggregations=["mean", "min", "max"],
@@ -364,6 +382,7 @@ def evaluate_reasoning(
 def log_run(
     df: pd.DataFrame,
     eval_df: pd.DataFrame,
+    results_dir: Path,
     prefix: str,
     metrics: dict,
     run_name: str,
@@ -403,16 +422,17 @@ def log_run(
             f"{prefix}_abs_error",
             f"{prefix}_predicted_guilty",
             f"{prefix}_correct",
+            f"{prefix}_consensus_reached",
         ]
         existing_cols = [c for c in mode_cols if c in eval_df.columns]
         mode_eval = eval_df[existing_cols].copy()
 
-        artifact_path = RESULTS_DIR / f"evaluation_{mode_label}.csv"
+        artifact_path = results_dir / f"evaluation_{mode_label}.csv"
         mode_eval.to_csv(artifact_path, index=False)
         mlflow.log_artifact(str(artifact_path))
 
         # ── Reasoning quality (LLM judge) ──
-        evaluate_reasoning(df, prefix, run_name)
+        evaluate_reasoning(df, results_dir, prefix, run_name)
 
         print(f"  MLflow run logged: {full_run_name} (ID: {run.info.run_id})")
 
@@ -429,16 +449,40 @@ def main() -> None:
         default="",
         help="Prefix for MLflow run names (e.g., 'v1' -> 'v1_intrinsic').",
     )
+    parser.add_argument(
+        "--dataset",
+        choices=["train", "test"],
+        default="test",
+        help="Dataset split to evaluate (default: test). "
+             "Reads results/{dataset}/ and {dataset}_ground_truth.csv.",
+    )
     args = parser.parse_args()
+
+    results_dir = Path("results") / args.dataset
+    summary_file = results_dir / "summary.csv"
+    ground_truth_file = Path(f"{args.dataset}_ground_truth.csv")
+    evaluation_file = results_dir / "evaluation.csv"
+
+    if not summary_file.exists():
+        print(f"ERROR: {summary_file} not found. Run 02_run_experiment.py first.")
+        return
+    if not ground_truth_file.exists():
+        print(f"ERROR: {ground_truth_file} not found. Run 01_build_dataset.py first.")
+        return
 
     # ── Load data ──
     print("Loading results and ground truth...")
-    df = load_and_merge()
+    df = load_and_merge(summary_file, ground_truth_file)
     print(f"  {len(df)} clients loaded.\n")
 
-    # ── Compute metrics ──
+    # ── Compute metrics (skip modes with no data in summary.csv) ──
     all_metrics = {}
-    for prefix in MODES:
+    active_modes = [p for p in MODES if f"{p}_score" in df.columns]
+    if not active_modes:
+        print("No mode results found in summary.csv. Check column names.")
+        return
+
+    for prefix in active_modes:
         mode_label = MODE_LABELS[prefix]
         metrics = compute_metrics(df, prefix)
         all_metrics[prefix] = metrics
@@ -455,41 +499,50 @@ def main() -> None:
         print(f"  Confusion: TP={metrics['tp']} FP={metrics['fp']} "
               f"TN={metrics['tn']} FN={metrics['fn']}")
         print(f"  Rejection rate:          {metrics['rejection_rate']:.1%}")
+        print(f"  Consensus rate:          {metrics['consensus_rate']:.1%}")
         print(f"  Avg revisions:           {metrics['avg_revisions']:.2f}")
+        print(f"  Expected LLM calls/case: {metrics['expected_llm_calls']:.1f}")
         if metrics.get("avg_confidence") is not None:
             print(f"  Avg confidence:          {metrics['avg_confidence']:.1f}")
 
         # Per-group summary
         print(f"\n  Per-Group Breakdown:")
         print(f"  {'Group':<25} {'Range Acc':>10} {'Class Acc':>10} "
-              f"{'Avg Score':>10} {'MAE':>8} {'n':>4}")
-        print(f"  {'-' * 67}")
+              f"{'Avg Score':>10} {'MAE':>8} {'Consensus':>10} {'n':>4}")
+        print(f"  {'-' * 80}")
         for group_label in GROUP_ORDER:
             safe = group_label.replace(":", "_")
             key_prefix = f"group/{safe}"
             if f"{key_prefix}/n" not in metrics:
                 continue
+            consensus_key = f"{key_prefix}/consensus_rate"
+            consensus_str = (
+                f"{metrics[consensus_key]:>9.0%}"
+                if consensus_key in metrics
+                else f"{'N/A':>9}"
+            )
             print(
                 f"  {group_label:<25} "
                 f"{metrics[f'{key_prefix}/range_accuracy']:>9.0%} "
                 f"{metrics[f'{key_prefix}/classification_accuracy']:>9.0%} "
                 f"{metrics[f'{key_prefix}/avg_score']:>10.1f} "
                 f"{metrics[f'{key_prefix}/mae_midpoint']:>8.1f} "
+                f"{consensus_str} "
                 f"{metrics[f'{key_prefix}/n']:>4.0f}"
             )
         print()
 
     # ── Build detailed evaluation CSV ──
     eval_df = build_evaluation_df(df)
-    eval_df.to_csv(EVALUATION_FILE, index=False)
-    print(f"Detailed evaluation saved: {EVALUATION_FILE}")
+    eval_df.to_csv(evaluation_file, index=False)
+    print(f"Detailed evaluation saved: {evaluation_file}")
 
     # ── Log to MLflow ──
     print(f"\nLogging to MLflow (experiment: '{EXPERIMENT_NAME}')...")
     mlflow.set_experiment(EXPERIMENT_NAME)
 
-    for prefix in MODES:
-        log_run(df, eval_df, prefix, all_metrics[prefix], args.run_name)
+    for prefix in active_modes:
+        log_run(df, eval_df, results_dir, prefix, all_metrics[prefix], args.run_name)
 
     print(f"\nDone. Run 'mlflow ui' and open http://localhost:5000 to compare runs.")
     print(f"Select both runs -> click 'Compare' for side-by-side view.")

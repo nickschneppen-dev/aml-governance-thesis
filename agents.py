@@ -16,7 +16,7 @@ from __future__ import annotations
 import os
 
 from langchain_core.runnables import RunnableConfig
-from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_openai import ChatOpenAI
 
 from state import (
     AgentState,
@@ -30,19 +30,15 @@ from tools import tool_analyze_transactions, tool_search_news
 # ---------------------------------------------------------------------------
 # LLM factory
 # ---------------------------------------------------------------------------
-def get_llm(temperature: float = 1.0) -> ChatGoogleGenerativeAI:
+def get_llm(temperature: float = 1.0) -> ChatOpenAI:
     """Return the LLM instance used by all agents.
 
     All agents share the same model to ensure the ONLY experimental variable
     is the governance structure (intrinsic vs. hierarchical), not model
     differences.
-
-    Note: Gemini 3.0+ requires temperature=1.0.  Lower values (e.g. 0.0)
-    can cause infinite loops and degraded reasoning performance per Google's
-    API documentation.
     """
-    return ChatGoogleGenerativeAI(
-        model=os.getenv("LLM_MODEL", "gemini-3-pro-preview"),
+    return ChatOpenAI(
+        model=os.getenv("LLM_MODEL", "gpt-4o-mini"),
         temperature=temperature,
     )
 
@@ -318,6 +314,88 @@ def revision_node(state: AgentState, config: RunnableConfig) -> dict:
         "analyst_output": output.model_dump(),
         "revision_count": state.get("revision_count", 0) + 1,
     }
+
+
+# ---------------------------------------------------------------------------
+# Factory: make_analyst_node / make_revision_node
+# Used for context_engineered mode (Kayba skillbook injection).
+# For intrinsic/hierarchical, pass extra_prompt="" for identical behaviour.
+# ---------------------------------------------------------------------------
+def make_analyst_node(extra_prompt: str = ""):
+    """Return an analyst_node closure with optional Context Playbook appended.
+
+    When extra_prompt is provided, the skillbook is appended to the Analyst's
+    system prompt under a <Context_Playbook> tag before every invocation.
+    """
+    system_prompt = ANALYST_PROMPT
+    if extra_prompt.strip():
+        system_prompt = (
+            ANALYST_PROMPT
+            + f"\n\n<Context_Playbook>\n{extra_prompt}\n</Context_Playbook>"
+        )
+
+    def _node(state: AgentState, config: RunnableConfig) -> dict:
+        llm = get_llm().with_structured_output(AnalystOutput)
+        news_summary_str = _format_news_summary(state["news_summary"])
+        output: AnalystOutput = llm.invoke([
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": (
+                f"## Quantitative Metrics (Source of Truth)\n\n"
+                f"{state['forensics_output']}\n\n"
+                f"## Qualitative Intelligence (News Scout Extractions)\n\n"
+                f"{news_summary_str}\n\n"
+                f"Produce your risk assessment for client {state['client_id']}."
+            )},
+        ], config=config)
+        return {"analyst_output": output.model_dump()}
+
+    return _node
+
+
+def make_revision_node(extra_prompt: str = ""):
+    """Return a revision_node closure with optional Context Playbook appended.
+
+    Both the initial analyst and revision nodes get the skillbook because
+    they represent the same Analyst persona at different workflow points.
+    """
+    system_prompt = REVISION_PROMPT
+    if extra_prompt.strip():
+        system_prompt = (
+            REVISION_PROMPT
+            + f"\n\n<Context_Playbook>\n{extra_prompt}\n</Context_Playbook>"
+        )
+
+    def _node(state: AgentState, config: RunnableConfig) -> dict:
+        llm = get_llm().with_structured_output(AnalystOutput)
+        review = state["review_output"]
+        news_summary_str = _format_news_summary(state["news_summary"])
+        analyst_str = _format_analyst_output(state["analyst_output"])
+        output: AnalystOutput = llm.invoke([
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": (
+                f"## Your Original Assessment\n\n"
+                f"{analyst_str}\n\n"
+                f"## Reviewer Feedback\n\n"
+                f"Decision: {review['decision']}\n"
+                f"Adjusted Score: {review['adjusted_risk_score']}\n"
+                f"Reasoning: {review['reasoning']}\n"
+                f"Citations:\n" +
+                "\n".join(f"  - {c}" for c in review["citations"]) +
+                f"\n\n## RAW Quantitative Data\n\n"
+                f"{state['forensics_output']}\n\n"
+                f"## RAW News Articles\n\n"
+                f"{state['news_output']}\n\n"
+                f"## News Scout Extractions\n\n"
+                f"{news_summary_str}\n\n"
+                f"Write your REVISED risk assessment for client {state['client_id']}."
+            )},
+        ], config=config)
+        return {
+            "analyst_output": output.model_dump(),
+            "revision_count": state.get("revision_count", 0) + 1,
+        }
+
+    return _node
 
 
 # ---------------------------------------------------------------------------

@@ -168,6 +168,24 @@ def tool_analyze_transactions(client_id: str) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Dataset configuration
+# ---------------------------------------------------------------------------
+def configure_dataset(prefix: str = "") -> None:
+    """Switch all tool file paths to a dataset-specific prefix.
+
+    Call this before building graphs when running on train or test datasets.
+    Example: configure_dataset("train_") -> reads train_knowledge_base.json etc.
+
+    Args:
+        prefix: File prefix, e.g. "train_" or "test_" or "" (original files).
+    """
+    global KNOWLEDGE_BASE_FILE, CLIENT_METRICS_FILE, CLIENT_LIST_FILE
+    KNOWLEDGE_BASE_FILE = Path(f"{prefix}knowledge_base.json")
+    CLIENT_METRICS_FILE = Path(f"{prefix}client_metrics.json")
+    CLIENT_LIST_FILE    = Path(f"{prefix}client_list.csv")
+
+
+# ---------------------------------------------------------------------------
 # Self-test
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":
