@@ -59,6 +59,24 @@
 | Avg Score Shift (final − initial) | +2.5 | **+14.1** | +3.0 |
 | Avg Confidence | 85.2 | 86.9 | 85.7 |
 
+### Reasoning Quality (LLM Judge, 1–5 scale)
+
+Scored by a separate `gpt-4o-mini` judge evaluating evidence coverage, citation of specific
+metrics, and handling of conflicting signals against the ground truth rationale.
+
+| Metric | Intrinsic | Hierarchical | Context-Engineered |
+|---|:---:|:---:|:---:|
+| Mean | **4.86** | 4.84 | 4.80 |
+| Max | 5.00 | 5.00 | 5.00 |
+| Min | 4.00 | 4.00 | 4.00 |
+
+> **Interpretation note:** All three modes score near the top of the scale and are not
+> meaningfully differentiated by the LLM judge. Hierarchical mode produces the worst
+> classification accuracy (54%) yet nearly identical reasoning scores (4.84 vs 4.86),
+> confirming that fluent, well-structured reasoning does not guarantee correct conclusions.
+> These scores validate that all three modes engage substantively with the evidence, but
+> classification metrics remain the primary outcome measure.
+
 ---
 
 ## 3. Per-Group Breakdown
