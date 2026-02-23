@@ -180,6 +180,31 @@ court convictions). This confirms the system design: agents are forced to read a
 content rather than rely on headlines, and the LLM is capable of extracting and
 acting on this buried evidence.
 
+### Finding 6: Reasoning quality scores do not differentiate the modes
+
+The LLM judge scores all three modes near the top of the 1–5 scale (mean 4.80–4.86),
+with identical min/max (4–5) across every mode. This near-uniform distribution carries
+two implications.
+
+First, it confirms that all three governance structures produce substantive, evidence-citing
+reasoning — the agents are not hallucinating or ignoring available data. This validates
+the system design: forcing agents to call deterministic tools rather than guess means the
+raw evidence is always present in the context, and the LLM reliably references it.
+
+Second, and more importantly, the scores reveal a fundamental limitation of LLM-as-judge
+evaluation for this task: **a well-reasoned justification for the wrong conclusion scores
+identically to a well-reasoned justification for the correct one.** The hierarchical
+auditor produces fluent, citation-rich reasoning (4.84 mean) while simultaneously
+achieving the worst classification accuracy (54%) and generating 22 false positives.
+Its reasoning is coherent — it just reaches the wrong calibration. This decoupling of
+reasoning quality from decision quality is itself a finding: governance mechanisms that
+optimise for *auditable justification* may not optimise for *correct outcomes*, a
+distinction with direct relevance to real-world AML compliance design.
+
+For the thesis, classification accuracy, precision, and F1 remain the primary outcome
+measures. Reasoning quality scores serve as a secondary validation that the agents are
+engaging with the evidence, not as a discriminator between modes.
+
 ---
 
 ## 5. Thesis Implications
