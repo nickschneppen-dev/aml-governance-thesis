@@ -8,7 +8,7 @@ parsing for MLflow grading.
 
 from __future__ import annotations
 
-from typing import TypedDict
+from typing import NotRequired, TypedDict
 
 from pydantic import BaseModel, Field
 
@@ -113,7 +113,8 @@ class AgentState(TypedDict):
     news_summary: dict      # serialised NewsSummary
 
     # ── Analyst output ──
-    analyst_output: dict    # serialised AnalystOutput
+    initial_analyst_output: NotRequired[dict]  # first assessment, never overwritten by revision
+    analyst_output: dict    # serialised AnalystOutput (latest — may be a revision)
 
     # ── Governance review ──
     review_output: dict     # serialised ReviewOutput

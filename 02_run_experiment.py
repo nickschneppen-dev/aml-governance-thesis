@@ -69,7 +69,13 @@ def _build_summary_columns(modes: list[str]) -> list[str]:
     cols = ["client_id"]
     for mode in modes:
         p = MODE_PREFIX[mode]
-        cols += [f"{p}_score", f"{p}_confidence", f"{p}_review_decision", f"{p}_revision_count"]
+        cols += [
+            f"{p}_initial_score",
+            f"{p}_score",
+            f"{p}_confidence",
+            f"{p}_review_decision",
+            f"{p}_revision_count",
+        ]
     # Add pairwise deltas
     for m1, m2 in itertools.combinations(modes, 2):
         p1, p2 = MODE_PREFIX[m1], MODE_PREFIX[m2]
@@ -119,7 +125,9 @@ def _append_summary_row(summary_file: Path, columns: list[str], row: dict) -> No
 def _extract_summary(state: dict) -> dict:
     """Pull the fields we need for the summary row from a final state."""
     final = state.get("final_output", {})
+    initial = state.get("initial_analyst_output", {})
     return {
+        "initial_score": initial.get("risk_score"),
         "score": final.get("risk_score"),
         "confidence": final.get("confidence"),
         "review_decision": state.get("review_decision", ""),
@@ -247,7 +255,8 @@ def main() -> None:
                 _save_state(dataset, mode, cid, state)
                 s = _extract_summary(state)
                 print(
-                    f"       {mode:<22s} score={s['score']:>3}  "
+                    f"       {mode:<22s} initial={s['initial_score']:>3}  "
+                    f"final={s['score']:>3}  "
                     f"review={s['review_decision']:<7}  "
                     f"revisions={s['revision_count']}"
                 )
@@ -264,6 +273,7 @@ def main() -> None:
         for mode in modes:
             p = MODE_PREFIX[mode]
             s = summaries[mode]
+            row[f"{p}_initial_score"] = s["initial_score"]
             row[f"{p}_score"] = s["score"]
             row[f"{p}_confidence"] = s["confidence"]
             row[f"{p}_review_decision"] = s["review_decision"]

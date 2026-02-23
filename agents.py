@@ -239,7 +239,11 @@ def analyst_node(state: AgentState, config: RunnableConfig) -> dict:
         )},
     ], config=config)
 
-    return {"analyst_output": output.model_dump()}
+    dumped = output.model_dump()
+    return {
+        "analyst_output": dumped,
+        "initial_analyst_output": dumped,  # captured once; revision_node never touches this
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -347,7 +351,11 @@ def make_analyst_node(extra_prompt: str = ""):
                 f"Produce your risk assessment for client {state['client_id']}."
             )},
         ], config=config)
-        return {"analyst_output": output.model_dump()}
+        dumped = output.model_dump()
+        return {
+            "analyst_output": dumped,
+            "initial_analyst_output": dumped,  # captured once; revision_node never touches this
+        }
 
     return _node
 

@@ -130,9 +130,13 @@ def compute_metrics(df: pd.DataFrame, prefix: str) -> dict:
     review_col = f"{prefix}_review_decision"
     revision_col = f"{prefix}_revision_count"
 
+    initial_col = f"{prefix}_initial_score"
+
     # Drop rows where this mode errored
     valid = df.dropna(subset=[score_col]).copy()
     valid[score_col] = valid[score_col].astype(float)
+    if initial_col in valid.columns:
+        valid[initial_col] = pd.to_numeric(valid[initial_col], errors="coerce")
     n = len(valid)
 
     if n == 0:
@@ -175,6 +179,13 @@ def compute_metrics(df: pd.DataFrame, prefix: str) -> dict:
     consensus_rate = (valid[review_col] == "APPROVE").mean()
     # Cost proxy: both modes share 3 base LLM calls; each revision cycle adds 2.
     expected_llm_calls = 3.0 + 2.0 * avg_revisions
+    # Score shift: how much the governance loop moved the score (final - initial).
+    # Positive = escalated, negative = de-escalated, zero = unchanged.
+    if initial_col in valid.columns:
+        shifted = valid.dropna(subset=[initial_col])
+        avg_score_shift = (shifted[score_col] - shifted[initial_col]).mean() if len(shifted) else None
+    else:
+        avg_score_shift = None
 
     metrics = {
         "n": n,
@@ -193,6 +204,7 @@ def compute_metrics(df: pd.DataFrame, prefix: str) -> dict:
         "avg_confidence": avg_confidence,
         "consensus_rate": consensus_rate,
         "expected_llm_calls": expected_llm_calls,
+        "avg_score_shift": avg_score_shift,
     }
 
     # ── Level 3: Per-group breakdown ──
@@ -228,6 +240,7 @@ def build_evaluation_df(df: pd.DataFrame) -> pd.DataFrame:
 
     for prefix in MODES:
         score_col = f"{prefix}_score"
+        initial_col = f"{prefix}_initial_score"
         if score_col not in out.columns:
             continue
 
@@ -257,6 +270,13 @@ def build_evaluation_df(df: pd.DataFrame) -> pd.DataFrame:
         out[f"{prefix}_consensus_reached"] = (
             out[review_col] == "APPROVE"
         ).astype(int)
+
+        # Score shift: how much the governance loop moved the score
+        if initial_col in out.columns:
+            out[f"{prefix}_score_shift"] = (
+                pd.to_numeric(out[score_col], errors="coerce")
+                - pd.to_numeric(out[initial_col], errors="coerce")
+            )
 
     return out
 
@@ -414,7 +434,9 @@ def log_run(
             "is_money_laundering",
             "expected_risk_min",
             "expected_risk_max",
+            f"{prefix}_initial_score",
             f"{prefix}_score",
+            f"{prefix}_score_shift",
             f"{prefix}_confidence",
             f"{prefix}_review_decision",
             f"{prefix}_revision_count",
@@ -502,6 +524,8 @@ def main() -> None:
         print(f"  Consensus rate:          {metrics['consensus_rate']:.1%}")
         print(f"  Avg revisions:           {metrics['avg_revisions']:.2f}")
         print(f"  Expected LLM calls/case: {metrics['expected_llm_calls']:.1f}")
+        if metrics.get("avg_score_shift") is not None:
+            print(f"  Avg score shift:         {metrics['avg_score_shift']:+.1f} (final minus initial)")
         if metrics.get("avg_confidence") is not None:
             print(f"  Avg confidence:          {metrics['avg_confidence']:.1f}")
 

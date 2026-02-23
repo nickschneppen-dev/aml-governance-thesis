@@ -16,8 +16,8 @@ All traces are exported (not just failures) because:
 
 Usage:
     python 04_export_traces.py
-    python 04_export_traces.py --results-dir results/test/intrinsic
-                               --ground-truth test_ground_truth.csv
+    python 04_export_traces.py --results-dir results/train/intrinsic
+                               --ground-truth train_ground_truth.csv
                                --output-dir training_traces
 """
 
@@ -73,11 +73,13 @@ def build_trace_md(state: dict, gt_row: dict) -> str:
     client_id = state.get("client_id", "UNKNOWN")
     final = state.get("final_output", {})
     analyst = state.get("analyst_output", {})
+    initial = state.get("initial_analyst_output", {})
     review = state.get("review_output", {})
 
     agent_score = final.get("risk_score", analyst.get("risk_score"))
     agent_label = final.get("risk_label", analyst.get("risk_label", "unknown"))
     agent_confidence = final.get("confidence", analyst.get("confidence"))
+    initial_score = initial.get("risk_score")
     review_decision = state.get("review_decision", "N/A")
     revision_count = state.get("revision_count", 0)
 
@@ -107,6 +109,9 @@ def build_trace_md(state: dict, gt_row: dict) -> str:
     rationale = gt_row.get("rationale", "")
 
     # ── Header metadata ──
+    score_shift = (
+        f"{agent_score - initial_score:+d}" if (agent_score is not None and initial_score is not None) else "N/A"
+    )
     header = f"""\
 ---
 # AML AGENT TRACE
@@ -114,7 +119,9 @@ def build_trace_md(state: dict, gt_row: dict) -> str:
 - **Client ID**: {client_id}
 - **Group**: {group_display}
 - **Outcome**: {outcome_str}
-- **Agent Score**: {agent_score}/100 ({agent_label}) — predicted {predicted_label}
+- **Initial Score**: {initial_score}/100 (first instinct before any review)
+- **Final Score**: {agent_score}/100 ({agent_label}) — predicted {predicted_label}
+- **Score Shift**: {score_shift} (final minus initial)
 - **Agent Confidence**: {agent_confidence}/100
 - **Ground Truth**: {actual_label} (is_money_laundering={actual_guilty})
 - **Expected Score Range**: {expected_min}–{expected_max}
@@ -155,7 +162,25 @@ def build_trace_md(state: dict, gt_row: dict) -> str:
 """
 
     # ── Analyst assessment ──
-    if analyst:
+    if initial and initial != analyst:
+        # Revision occurred — show both initial and final analyst outputs
+        analyst_section = f"""\
+## Analyst Assessment (Initial — Before Review)
+
+Score: {initial.get('risk_score', 'N/A')}/100 ({initial.get('risk_label', '')}) \
+| Confidence: {initial.get('confidence', 'N/A')}/100
+
+{initial.get('reasoning', '_No reasoning recorded._')}
+
+## Analyst Assessment (Final — After Revision)
+
+Score: {analyst.get('risk_score', 'N/A')}/100 ({analyst.get('risk_label', '')}) \
+| Confidence: {analyst.get('confidence', 'N/A')}/100
+
+{analyst.get('reasoning', '_No reasoning recorded._')}
+
+"""
+    elif analyst:
         analyst_section = f"""\
 ## Analyst Assessment
 
@@ -297,15 +322,15 @@ def main() -> None:
     parser.add_argument(
         "--results-dir",
         type=Path,
-        default=Path("results/test/intrinsic"),
+        default=Path("results/train/intrinsic"),
         help="Directory containing {client_id}.json result files "
-             "(default: results/test/intrinsic).",
+             "(default: results/train/intrinsic).",
     )
     parser.add_argument(
         "--ground-truth",
         type=Path,
-        default=Path("test_ground_truth.csv"),
-        help="Ground truth CSV file (default: test_ground_truth.csv).",
+        default=Path("train_ground_truth.csv"),
+        help="Ground truth CSV file (default: train_ground_truth.csv).",
     )
     parser.add_argument(
         "--output-dir",
