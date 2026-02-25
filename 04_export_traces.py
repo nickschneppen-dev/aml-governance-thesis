@@ -16,7 +16,7 @@ All traces are exported (not just failures) because:
 
 Usage:
     python 04_export_traces.py
-    python 04_export_traces.py --results-dir results/train/intrinsic
+    python 04_export_traces.py --results-dir results/train/gpt-4o-mini/run_1/intrinsic
                                --ground-truth train_ground_truth.csv
                                --output-dir training_traces
 """
@@ -322,9 +322,9 @@ def main() -> None:
     parser.add_argument(
         "--results-dir",
         type=Path,
-        default=Path("results/train/intrinsic"),
+        default=Path("results/train/gpt-4o-mini/run_1/intrinsic"),
         help="Directory containing {client_id}.json result files "
-             "(default: results/train/intrinsic).",
+             "(default: results/train/gpt-4o-mini/run_1/intrinsic).",
     )
     parser.add_argument(
         "--ground-truth",

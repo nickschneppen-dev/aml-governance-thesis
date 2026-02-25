@@ -115,6 +115,14 @@ class AgentState(TypedDict):
     # ── Analyst output ──
     initial_analyst_output: NotRequired[dict]  # first assessment, never overwritten by revision
     analyst_output: dict    # serialised AnalystOutput (latest — may be a revision)
+    revision_history: NotRequired[list]  # list of AnalystOutput dicts, one per revision in order
+
+    # ── Single-context conversation (intrinsic / context_engineered / llm_context) ──
+    # The full message list from the analyst's API call, growing with each turn.
+    # self_review_node and make_revision_node append to this list so that the
+    # analyst, self-reviewer, and revisions all share one context window.
+    # auditor_node does not use this field — hierarchical remains a separate call.
+    analyst_conversation: NotRequired[list]
 
     # ── Governance review ──
     review_output: dict     # serialised ReviewOutput

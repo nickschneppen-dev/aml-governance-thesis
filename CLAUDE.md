@@ -229,14 +229,19 @@ python 02_run_experiment.py --force                                  # re-run fr
 ```
 results/
   {dataset}/
-    {mode}/{client_id}.json    # full AgentState (all intermediate outputs)
-    summary.csv                # wide-format comparison (streamed, one row per client)
+    {model}/             # e.g., gpt-4o-mini, gpt-4o
+      run_{run_id}/
+        {mode}/{client_id}.json    # full AgentState (all intermediate outputs)
+        summary.csv                # wide-format comparison (streamed, one row per client)
 ```
 
 **summary.csv** columns are generated dynamically from whichever modes were run:
-- Per mode: `{prefix}_score`, `{prefix}_confidence`, `{prefix}_review_decision`, `{prefix}_revision_count`
-- Column prefixes: `int` (intrinsic), `hier` (hierarchical), `ctx` (context_engineered)
+- Fixed: `client_id`, `model`
+- Per mode: `{prefix}_initial_score`, `{prefix}_score`, `{prefix}_confidence`, `{prefix}_review_decision`, `{prefix}_revision_count`
+- Column prefixes: `int` (intrinsic), `hier` (hierarchical), `ctx` (context_engineered), `llm` (llm_context)
 - Pairwise deltas: `int_hier_delta`, `int_ctx_delta`, etc.
+
+**Multiple runs for variance:** Use `--run-id` to separate replicates. Use `--model` to separate model conditions. Each combination gets its own directory and summary CSV.
 
 **Resumability:** Skips clients already in summary.csv. Use `--force` to wipe and restart.
 
@@ -248,8 +253,8 @@ Bridges this system and Kayba's Agentic Context Engine. Runs **outside** the mai
 
 ```bash
 python 04_export_traces.py
-# defaults: --results-dir results/test/intrinsic
-#           --ground-truth test_ground_truth.csv
+# defaults: --results-dir results/train/run_1/intrinsic
+#           --ground-truth train_ground_truth.csv
 #           --output-dir training_traces
 ```
 
@@ -293,8 +298,10 @@ mlflow ui   # → http://localhost:5000, select runs → Compare
 Computes all metrics in Python (handles custom trap-group logic that MLflow can't infer), then logs everything to MLflow for side-by-side comparison.
 
 ```bash
-python 03_evaluate.py --dataset test             # evaluate test results
-python 03_evaluate.py --dataset test --run-name v1  # custom MLflow run name prefix
+python 03_evaluate.py --dataset test                              # gpt-4o-mini, run 1 (defaults)
+python 03_evaluate.py --dataset test --model gpt-4o --run-id 1   # different model
+python 03_evaluate.py --dataset test --run-id 2                   # replicate 2
+python 03_evaluate.py --dataset test --run-name v1                # custom MLflow name prefix
 ```
 
 **Three levels of metrics (per mode):**
@@ -310,9 +317,9 @@ python 03_evaluate.py --dataset test --run-name v1  # custom MLflow run name pre
 **Reasoning quality (LLM judge):** Uses `mlflow.evaluate()` with a custom `make_genai_metric` to score each agent's reasoning text (1-5) on evidence coverage: does it cite specific metrics, reference specific article claims, and address conflicting signals? Compared against `ground_truth.rationale`.
 
 **Output:**
-- `results/{dataset}/evaluation.csv` — one row per client with all computed columns for all modes
-- `results/{dataset}/evaluation_{mode}.csv` — per-mode artifact logged to MLflow
-- MLflow experiment `"aml-governance"` — one run per mode with all metrics, params, and artifacts
+- `results/{dataset}/{model}/run_{run_id}/evaluation.csv` — one row per client with all computed columns for all modes
+- `results/{dataset}/{model}/run_{run_id}/evaluation_{mode}.csv` — per-mode artifact logged to MLflow
+- MLflow experiment `"aml-governance"` — one run per mode, named `{model}_r{run_id}_{mode}`, with all metrics, params, and artifacts
 
 Only modes present as columns in `summary.csv` are evaluated (dynamic — no hard-coded mode list).
 

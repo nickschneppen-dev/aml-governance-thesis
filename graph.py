@@ -1,23 +1,23 @@
 """
 graph.py -- LangGraph graph construction for all governance modes.
 
-Three graph variants share identical nodes except for the review step and
-optional Analyst skillbook injection:
-  - Intrinsic:            Analyst reviews its own work  (self_review_node)
-  - Hierarchical:         Independent Auditor reviews   (auditor_node)
-  - Context-Engineered:   Intrinsic + Kayba skillbook injected into Analyst
+Four graph variants share an identical Analyst node. Only the review step
+differs, isolating the governance mechanism as the sole experimental variable:
+  - Intrinsic:            self-review, no rules        (make_self_review_node())
+  - Hierarchical:         independent auditor           (auditor_node)
+  - Context-Engineered:   self-review + Kayba rules    (make_self_review_node(kayba))
+  - LLM-Context:          self-review + LLM rules      (make_self_review_node(llm))
 
-Both the intrinsic and context_engineered modes use self_review_node.
-The only difference in context_engineered is the Analyst's system prompt,
-which has the Kayba-generated Context Playbook appended.
+Rules are injected into the self-review user message, not the Analyst system
+prompt. The Analyst produces the same initial report in all modes.
 
-The skillbook is read from external_agent_injection.txt at graph build time.
-Run Kayba's agentic_system_prompting.py first to generate this file.
+  context_engineered reads:  external_agent_injection.txt
+  llm_context reads:         llm_context_rules.txt
 
 Usage:
     from graph import build_graph
 
-    app = build_graph("intrinsic")          # or "hierarchical" / "context_engineered"
+    app = build_graph("intrinsic")   # or "hierarchical" / "context_engineered" / "llm_context"
     result = app.invoke({"client_id": "C1234", "revision_count": 0})
 """
 
@@ -33,15 +33,16 @@ from agents import (
     forensics_scout_node,
     make_analyst_node,
     make_revision_node,
+    make_self_review_node,
     news_scout_node,
-    self_review_node,
 )
 from state import AgentState
 
 MAX_REVISIONS = 2
 SKILLBOOK_PATH = Path("external_agent_injection.txt")
+LLM_CONTEXT_RULES_PATH = Path("llm_context_rules.txt")
 
-VALID_MODES = ("intrinsic", "hierarchical", "context_engineered")
+VALID_MODES = ("intrinsic", "hierarchical", "context_engineered", "llm_context")
 
 
 def _should_revise(state: AgentState) -> str:
@@ -73,7 +74,7 @@ def build_graph(mode: str) -> StateGraph:
             f"Unknown mode: {mode!r}. Use one of: {', '.join(VALID_MODES)}."
         )
 
-    # Load Kayba skillbook for context_engineered mode
+    # Load external context for modes that inject rules into the Analyst prompt
     extra_context = ""
     if mode == "context_engineered":
         if not SKILLBOOK_PATH.exists():
@@ -82,14 +83,23 @@ def build_graph(mode: str) -> StateGraph:
                 "Run Kayba's agentic_system_prompting.py first to generate it."
             )
         extra_context = SKILLBOOK_PATH.read_text(encoding="utf-8")
+    elif mode == "llm_context":
+        if not LLM_CONTEXT_RULES_PATH.exists():
+            raise FileNotFoundError(
+                f"LLM-Context rules not found at {LLM_CONTEXT_RULES_PATH}. "
+                "Run 05_generate_llm_context_rules.py first to generate it."
+            )
+        extra_context = LLM_CONTEXT_RULES_PATH.read_text(encoding="utf-8")
 
-    # Select review node: hierarchical uses independent auditor; both intrinsic
-    # variants use self-review (the experimental variable is the Analyst's prompt)
-    review_fn = auditor_node if mode == "hierarchical" else self_review_node
+    # The analyst is identical across all modes — rules are NOT injected here.
+    # Only the review step differs, isolating the governance mechanism.
+    analyst_fn = make_analyst_node()
+    revision_fn = make_revision_node()
 
-    # Build analyst and revision nodes (with optional skillbook injection)
-    analyst_fn = make_analyst_node(extra_context)
-    revision_fn = make_revision_node(extra_context)
+    # Select review node: hierarchical uses an independent auditor; all other
+    # modes use self-review. For context_engineered and llm_context, the rules
+    # are injected into the self-review user message (extra_context != "").
+    review_fn = auditor_node if mode == "hierarchical" else make_self_review_node(extra_context)
 
     graph = StateGraph(AgentState)
 

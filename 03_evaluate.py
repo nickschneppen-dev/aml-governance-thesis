@@ -12,8 +12,10 @@ Three levels of evaluation:
   Bonus   -- Reasoning Quality: LLM-judged evidence coverage via mlflow.evaluate()
 
 Usage:
-    python 03_evaluate.py                # evaluate latest results
-    python 03_evaluate.py --run-name v1  # custom run name prefix
+    python 03_evaluate.py                                     # evaluate gpt-4o-mini, run 1 (defaults)
+    python 03_evaluate.py --model gpt-4o --run-id 1          # different model
+    python 03_evaluate.py --run-id 2                         # evaluate replicate 2
+    python 03_evaluate.py --run-name v1                      # custom MLflow run name prefix
 
 MLflow UI (after running):
     mlflow ui
@@ -41,11 +43,12 @@ load_dotenv()
 CLASSIFICATION_THRESHOLD = 50  # score >= 50 → predict guilty
 EXPERIMENT_NAME = "aml-governance"
 
-MODES = ["int", "hier", "ctx"]
+MODES = ["int", "hier", "ctx", "llm"]
 MODE_LABELS = {
     "int": "intrinsic",
     "hier": "hierarchical",
     "ctx": "context_engineered",
+    "llm": "llm_context",
 }
 
 # Display-friendly group ordering
@@ -476,11 +479,23 @@ def main() -> None:
         choices=["train", "test"],
         default="test",
         help="Dataset split to evaluate (default: test). "
-             "Reads results/{dataset}/ and {dataset}_ground_truth.csv.",
+             "Reads results/{dataset}/{model}/run_{run_id}/ and {dataset}_ground_truth.csv.",
+    )
+    parser.add_argument(
+        "--model",
+        default=os.getenv("LLM_MODEL", "gpt-4o-mini"),
+        help="Model name matching the one used in 02_run_experiment.py "
+             "(default: LLM_MODEL env var or gpt-4o-mini).",
+    )
+    parser.add_argument(
+        "--run-id",
+        default="1",
+        help="Replicate identifier matching the one used in 02_run_experiment.py "
+             "(default: 1). Reads results/{dataset}/{model}/run_{run_id}/summary.csv.",
     )
     args = parser.parse_args()
 
-    results_dir = Path("results") / args.dataset
+    results_dir = Path("results") / args.dataset / args.model / f"run_{args.run_id}"
     summary_file = results_dir / "summary.csv"
     ground_truth_file = Path(f"{args.dataset}_ground_truth.csv")
     evaluation_file = results_dir / "evaluation.csv"
@@ -565,8 +580,15 @@ def main() -> None:
     print(f"\nLogging to MLflow (experiment: '{EXPERIMENT_NAME}')...")
     mlflow.set_experiment(EXPERIMENT_NAME)
 
+    # Include model and run_id in the MLflow run name so runs are distinguishable.
+    # Format: "{run_name}_{model}_r{run_id}_{mode}" or "{model}_r{run_id}_{mode}".
+    run_name_prefix = (
+        f"{args.run_name}_{args.model}_r{args.run_id}"
+        if args.run_name
+        else f"{args.model}_r{args.run_id}"
+    )
     for prefix in active_modes:
-        log_run(df, eval_df, results_dir, prefix, all_metrics[prefix], args.run_name)
+        log_run(df, eval_df, results_dir, prefix, all_metrics[prefix], run_name_prefix)
 
     print(f"\nDone. Run 'mlflow ui' and open http://localhost:5000 to compare runs.")
     print(f"Select both runs -> click 'Compare' for side-by-side view.")

@@ -134,6 +134,31 @@ original if approving).
 - Cite specific data points from the raw outputs to support your decision.
 """
 
+SELF_REVIEW_USER_PROMPT = """\
+Review the risk assessment you just produced above.
+
+You have access to the original quantitative data and news articles earlier in \
+this conversation.
+
+## Review Checklist
+
+- Did you consider ALL the evidence, or did you anchor on the first signal you saw?
+- Does your risk score match the evidence?  Would you change it?
+- Did you address conflicting evidence explicitly?
+- Did the News Scout miss any claims from the raw articles?  If so, do those \
+missed claims change your assessment?
+- Could you be wrong?  What would change your mind?
+
+## Rules
+
+- Compare your report's claims against the raw data earlier in this conversation.
+- If you find a discrepancy or missed evidence, REJECT and explain why.
+- If your report is consistent with all the raw data, APPROVE.
+- Provide an adjusted_risk_score reflecting your current view (may match \
+original if approving).
+- Cite specific data points from the raw outputs to support your decision.
+"""
+
 AUDITOR_PROMPT = """\
 You are an independent AML Compliance Auditor.  You did NOT write the report \
 you are reviewing.
@@ -250,18 +275,60 @@ def analyst_node(state: AgentState, config: RunnableConfig) -> dict:
 # Node: Self-Review (LLM -- intrinsic governance)
 # ---------------------------------------------------------------------------
 def self_review_node(state: AgentState, config: RunnableConfig) -> dict:
-    """The Analyst reviews its own report against the raw data."""
-    llm = get_llm().with_structured_output(ReviewOutput)
+    """Continue the analyst's conversation to review its own report.
 
-    output: ReviewOutput = llm.invoke([
-        {"role": "system", "content": SELF_REVIEW_PROMPT},
-        {"role": "user", "content": _build_review_context(state)},
-    ], config=config)
+    Runs within the same context window as the analyst — the reviewer has the
+    analyst's full reasoning chain in memory, not just a serialised output.
+    This is the architectural distinction from auditor_node, which opens a
+    fresh, independent context.
 
-    return {
-        "review_output": output.model_dump(),
-        "review_decision": output.decision,
-    }
+    This is the base (no-rules) variant used by intrinsic mode. For
+    context_engineered and llm_context, graph.py uses make_self_review_node()
+    with rules injected into the review user message.
+    """
+    return make_self_review_node()(state, config)
+
+
+# ---------------------------------------------------------------------------
+# Factory: make_self_review_node
+# Used for context_engineered and llm_context modes.
+# For intrinsic, pass no argument (identical base behaviour).
+# ---------------------------------------------------------------------------
+def make_self_review_node(extra_prompt: str = ""):
+    """Return a self_review_node closure with optional rules appended.
+
+    When extra_prompt is provided (context_engineered / llm_context modes),
+    the rules are appended to the self-review user message under a
+    <Context_Playbook> tag. The analyst's initial report is unchanged across
+    all modes — only the reviewer's guidance differs.
+    """
+    review_prompt = SELF_REVIEW_USER_PROMPT
+    if extra_prompt.strip():
+        review_prompt = (
+            SELF_REVIEW_USER_PROMPT
+            + f"\n\n<Context_Playbook>\n{extra_prompt}\n</Context_Playbook>"
+        )
+
+    def _node(state: AgentState, config: RunnableConfig) -> dict:
+        llm = get_llm().with_structured_output(ReviewOutput)
+
+        messages = state["analyst_conversation"] + [
+            {"role": "user", "content": review_prompt},
+        ]
+
+        output: ReviewOutput = llm.invoke(messages, config=config)
+
+        updated_conversation = messages + [
+            {"role": "assistant", "content": _format_review_output(output.model_dump())},
+        ]
+
+        return {
+            "review_output": output.model_dump(),
+            "review_decision": output.decision,
+            "analyst_conversation": updated_conversation,
+        }
+
+    return _node
 
 
 # ---------------------------------------------------------------------------
@@ -322,27 +389,21 @@ def revision_node(state: AgentState, config: RunnableConfig) -> dict:
 
 # ---------------------------------------------------------------------------
 # Factory: make_analyst_node / make_revision_node
-# Used for context_engineered mode (Kayba skillbook injection).
-# For intrinsic/hierarchical, pass extra_prompt="" for identical behaviour.
 # ---------------------------------------------------------------------------
-def make_analyst_node(extra_prompt: str = ""):
-    """Return an analyst_node closure with optional Context Playbook appended.
+def make_analyst_node():
+    """Return an analyst_node closure.
 
-    When extra_prompt is provided, the skillbook is appended to the Analyst's
-    system prompt under a <Context_Playbook> tag before every invocation.
+    The analyst always uses the base ANALYST_PROMPT, identical across all
+    governance modes. Rules and context are injected at the review step only
+    (via make_self_review_node), so that the initial analyst report is held
+    constant and pairwise comparisons between modes isolate the reviewer.
     """
-    system_prompt = ANALYST_PROMPT
-    if extra_prompt.strip():
-        system_prompt = (
-            ANALYST_PROMPT
-            + f"\n\n<Context_Playbook>\n{extra_prompt}\n</Context_Playbook>"
-        )
-
     def _node(state: AgentState, config: RunnableConfig) -> dict:
         llm = get_llm().with_structured_output(AnalystOutput)
         news_summary_str = _format_news_summary(state["news_summary"])
-        output: AnalystOutput = llm.invoke([
-            {"role": "system", "content": system_prompt},
+
+        messages = [
+            {"role": "system", "content": ANALYST_PROMPT},
             {"role": "user", "content": (
                 f"## Quantitative Metrics (Source of Truth)\n\n"
                 f"{state['forensics_output']}\n\n"
@@ -350,57 +411,80 @@ def make_analyst_node(extra_prompt: str = ""):
                 f"{news_summary_str}\n\n"
                 f"Produce your risk assessment for client {state['client_id']}."
             )},
-        ], config=config)
+        ]
+
+        output: AnalystOutput = llm.invoke(messages, config=config)
         dumped = output.model_dump()
+
+        # Seed the single-context conversation so self_review_node and
+        # make_revision_node can continue in the same context window.
+        analyst_conversation = messages + [
+            {"role": "assistant", "content": _format_analyst_output(dumped)},
+        ]
+
         return {
             "analyst_output": dumped,
             "initial_analyst_output": dumped,  # captured once; revision_node never touches this
+            "analyst_conversation": analyst_conversation,
         }
 
     return _node
 
 
-def make_revision_node(extra_prompt: str = ""):
-    """Return a revision_node closure with optional Context Playbook appended.
+def make_revision_node():
+    """Return a revision_node closure.
 
-    Both the initial analyst and revision nodes get the skillbook because
-    they represent the same Analyst persona at different workflow points.
+    The revision node represents the same Analyst persona rewriting after a
+    REJECT. Like make_analyst_node, it uses the base prompt — rules are not
+    re-injected here because the review turn (which contained the rules) is
+    already visible earlier in the shared conversation context window.
     """
-    system_prompt = REVISION_PROMPT
-    if extra_prompt.strip():
-        system_prompt = (
-            REVISION_PROMPT
-            + f"\n\n<Context_Playbook>\n{extra_prompt}\n</Context_Playbook>"
-        )
-
     def _node(state: AgentState, config: RunnableConfig) -> dict:
         llm = get_llm().with_structured_output(AnalystOutput)
         review = state["review_output"]
-        news_summary_str = _format_news_summary(state["news_summary"])
-        analyst_str = _format_analyst_output(state["analyst_output"])
-        output: AnalystOutput = llm.invoke([
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": (
-                f"## Your Original Assessment\n\n"
-                f"{analyst_str}\n\n"
-                f"## Reviewer Feedback\n\n"
-                f"Decision: {review['decision']}\n"
-                f"Adjusted Score: {review['adjusted_risk_score']}\n"
-                f"Reasoning: {review['reasoning']}\n"
-                f"Citations:\n" +
-                "\n".join(f"  - {c}" for c in review["citations"]) +
-                f"\n\n## RAW Quantitative Data\n\n"
-                f"{state['forensics_output']}\n\n"
-                f"## RAW News Articles\n\n"
-                f"{state['news_output']}\n\n"
-                f"## News Scout Extractions\n\n"
-                f"{news_summary_str}\n\n"
-                f"Write your REVISED risk assessment for client {state['client_id']}."
-            )},
-        ], config=config)
+
+        # Continue the existing conversation — the analyst sees its original
+        # analysis and the review turn (which for context_engineered / llm_context
+        # already contains the rules) in the shared context window.
+        revision_request = (
+            f"Your assessment was REJECTED. Review the feedback below and write "
+            f"a revised risk assessment.\n\n"
+            f"## Reviewer Feedback\n\n"
+            f"Adjusted Score: {review['adjusted_risk_score']}\n"
+            f"Reasoning: {review['reasoning']}\n"
+            f"Citations:\n" +
+            "\n".join(f"  - {c}" for c in review["citations"]) +
+            f"\n\n## Revision Instructions\n\n"
+            f"- Address every point raised by the reviewer.\n"
+            f"- Re-examine the raw data from earlier in this conversation.\n"
+            f"- You MAY maintain your original score if you can justify it "
+            f"against the reviewer's citations. But you must explain why.\n"
+            f"- Do NOT simply capitulate. Use the evidence to reach the best "
+            f"conclusion.\n\n"
+            f"Write your REVISED risk assessment for client {state['client_id']}."
+        )
+
+        messages = state["analyst_conversation"] + [
+            {"role": "user", "content": revision_request},
+        ]
+
+        output: AnalystOutput = llm.invoke(messages, config=config)
+        dumped = output.model_dump()
+
+        # Append revision turn for any subsequent review in the same conversation
+        updated_conversation = messages + [
+            {"role": "assistant", "content": _format_analyst_output(dumped)},
+        ]
+
+        # Append this revision's output to the history for trajectory analysis.
+        history = list(state.get("revision_history", []))
+        history.append(dumped)
+
         return {
-            "analyst_output": output.model_dump(),
+            "analyst_output": dumped,
             "revision_count": state.get("revision_count", 0) + 1,
+            "analyst_conversation": updated_conversation,
+            "revision_history": history,
         }
 
     return _node
@@ -462,6 +546,17 @@ def _format_analyst_output(output: dict) -> str:
         f"Risk Score: {output['risk_score']}/100 ({output['risk_label']})\n"
         f"Confidence: {output['confidence']}/100\n"
         f"Reasoning: {output['reasoning']}"
+    )
+
+
+def _format_review_output(review: dict) -> str:
+    """Format a ReviewOutput dict into readable text for conversation history."""
+    citations = "\n".join(f"  - {c}" for c in review.get("citations", []))
+    return (
+        f"Review Decision: {review['decision']}\n"
+        f"Adjusted Score: {review['adjusted_risk_score']}/100\n"
+        f"Reasoning: {review['reasoning']}\n"
+        f"Citations:\n{citations}"
     )
 
 

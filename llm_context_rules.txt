@@ -1,0 +1,178 @@
+[Rule 1]: Do not treat “high volume / high fan‑out / high fan‑in / high average amount” as inherently suspicious; first ask whether the pattern is normal for the customer’s stated business model.
+Applies when:  
+- Total volume, fan‑out, fan‑in, or average transaction size breach a numeric threshold, and  
+- Qualitative data clearly identifies a legitimate, high‑throughput or high‑ticket business model (e.g. payroll provider, SaaS/payroll-heavy startup, labour‑hire firm, casino/junket, co‑op, used‑car dealer, medical clinic, vending franchise, events company, import‑export trader).
+Rationale:  
+- In many false positives (high‑roller, payroll, structurer traps) the agent anchored on quantitative flags (volume > $200k, fan‑out > 80, avg > $1k) and then only slightly “moderated” the score, still labelling as medium/high risk.  
+- In correct structurer and charity/payroll cases, the agent explicitly mapped the metrics to what you’d expect for that industry (e.g., large medical bills, car prices, event contracts, payroll counts) and substantially downgraded risk.  
+- The agent must first test: “Does the business explanation fully account for the metrics?” If yes and there is no direct adverse intelligence on the customer, quantitative thresholds alone should not drive a suspicious classification.
+
+
+[Rule 2]: When a credible alibi from the knowledge base fully explains the flagged pattern, downgrade risk sharply, not marginally.
+Applies when:  
+- There is a clear, specific, and plausible explanation in the articles (e.g., “registered NGO running a national fundraising campaign”, “rapidly growing startup paying staff/contractors”, “family‑owned car dealership selling 15–20 vehicles/month”), and  
+- No article alleges or strongly implies that this customer (or its controlling persons) are involved in crime.
+Rationale:  
+- Errors show the agent acknowledging benign explanations (e.g., NGO donations, payroll expenses, vending cash collections) but still landing in “medium 50–70” territory because a numeric risk flag fired. These should have been 0–30.  
+- Correct trap cases show better behavior: when the alibi was accepted (charities C2167/4615/9477, structurer C5075/7160/8266), scores landed low/medium‑low, in line with innocent ground truth.  
+- The agent needs an explicit bias toward innocence when a strong, specific alibi covers the suspicious metric and there is no customer‑specific adverse evidence.
+
+
+[Rule 3]: Treat “sector‑level scrutiny” or “governance issues” as weak signals unless tied directly to this customer’s involvement in crime.
+Applies when:  
+- Articles mention industry‑wide reviews, regulator focus on a sector, or generic concerns (e.g., “Fair Work investigating misclassification in tech”, “ATO focusing on cash‑intensive businesses”, “events industry under AML review”, “labour‑hire sector exploitation concerns”), but  
+- The client itself is not alleged to have breached AML/CTF, fraud, or similar offences.
+Rationale:  
+- Several false positives (SaaS payroll, vending/event businesses, startups in scrutinised sectors) were inflated because the agent over‑weighted sector‑wide warnings relative to client‑specific clean behaviour.  
+- In correct cases, generic sector warnings were correctly read as context (e.g., “car dealers must comply”, “trade finance under scrutiny”) rather than direct evidence.  
+- Use sector‑level scrutiny to justify “monitor but not escalate” (e.g., move from very low to low/medium‑low), not to push into medium‑high or high risk in the absence of direct adverse facts about the customer.
+
+
+[Rule 4]: For charities and NGOs, high fan‑in is usually normal and should default to low AML risk if registration and legitimate campaigns are evidenced.
+Applies when:  
+- Fan‑in exceeds a threshold (e.g., >20 unique senders) AND  
+- Articles describe a registered charity/NGO with identifiable campaigns or grants (disaster relief, mental health fundraiser, youth programs, animal rescue, government grants) and no strong allegation of criminal misuse of funds.
+Rationale:  
+- Incorrect charity cases show the agent treating high fan‑in as a core risk and only partially “mitigating” it, leaving scores around 35–60 when the ground truth was 0–30.  
+- Correct charity trap cases recognised that large numbers of donors are inherent to NGO operations and that ACNC registration / clean audit history is powerful exculpatory evidence.  
+- For such entities, high fan‑in should be interpreted as “expected pattern” unless there is explicit evidence of diversion, terrorism links, or fraud involving the charity itself.
+
+
+[Rule 5]: For payroll, labour‑hire, and growing employers, very high fan‑out with modest average amounts is more likely payroll/vendor activity than layering.
+Applies when:  
+- Fan‑out is very high (e.g., ≥80–100) and average transaction size is moderate (sub‑$1,000), and  
+- Articles describe the client as an employer, labour‑hire firm, SaaS with payroll, or other staff/contractor‑heavy operation, and  
+- No article alleges AML‑type wrongdoing by the client.
+Rationale:  
+- Multiple payroll‑trap false positives occurred because the agent equated “fan‑out > 80” with layering even when knowledge base clearly stated the client runs payroll or vendor disbursements.  
+- Correct NGO/charity/payout cases show that when the recipient pattern maps to salaries, contractor payments, or grant disbursements, high fan‑out is benign.  
+- The agent should explicitly test: “Does the fan‑out roughly match expected staff/beneficiary counts?” If yes, treat as corroborating innocence.
+
+
+[Rule 6]: For high‑turnover businesses, large total volume alone is not a money‑laundering signal; demand a mismatch between activity and business scale.
+Applies when:  
+- Total volume exceeds an internal threshold (e.g., >$200k), but  
+- The client is described as a casino/junket, cooperative, high‑revenue startup, payroll provider, or similar, and  
+- There is no evidence that their transaction scale is inconsistent with the size/business described (e.g., article quotes revenue, member counts, or throughput in the same ballpark).
+Rationale:  
+- Many “high‑roller” false positives treated crossing the volume threshold as decisive, despite articles describing high‑turnover operations with clean audits and regulatory licensing.  
+- Correct structurer and trade‑business cases explicitly reconciled transaction volumes with stated business turnover.  
+- The agent should search for statements like “$X million revenue”, “Y farmers/clients”, “Z tables/venues/locations” and ensure that transaction volume is abnormal relative to that, not merely “large in absolute terms”.
+
+
+[Rule 7]: High average transaction size in a B2B / high‑ticket context should be presumed legitimate if clearly aligned with ticket sizes given in the articles.
+Applies when:  
+- Average amount > threshold (e.g., >$1,000) triggers a structuring flag, but  
+- Articles mention typical invoice/contract/sale values (e.g., medical billing packages, vehicle prices, event contracts, trade shipments) of similar or higher size, and  
+- No direct allegation that the client is abusing that business model for laundering.
+Rationale:  
+- False positives in structurer traps occurred where the agent still rated medium risk even after confirming that average transaction matched normal ticket sizes.  
+- In correct structurer traps (clinics, car dealers, traders), the agent used concrete amounts from articles ($8k–$15k cars, $8k–$12k events) to normalise the high average.  
+- Whenever the narrative provides explicit price points consistent with the average, the high‑avg flag should be downgraded heavily.
+
+
+[Rule 8]: Generic “reputational” or corporate‑governance concerns must not be treated like AML red flags.
+Applies when:  
+- Articles mention CEO expenses, governance reviews, subcontractor disputes, or sector‑wide compliance reviews, but  
+- There is no mention of fraud, corruption, tax evasion, money laundering, terrorism financing, or sanctions evasion involving the client.
+Rationale:  
+- The agent at times over‑translated soft governance issues into elevated AML scores (e.g., subcontractor payment questions, Fair Work/industry investigations).  
+- Correct charity and sector‑review cases handled these as context (“keep an eye on governance”) without significant AML score uplift.  
+- For AML purposes, treat such issues as very weak; they may justify slightly more monitoring but not a move into clearly suspicious territory.
+
+
+[Rule 9]: When credible adverse intelligence directly implicates the client in serious financial crime, it must override “clean” transaction metrics.
+Applies when:  
+- An article or intelligence report explicitly links the named client (or a clearly matched individual/beneficial owner) to: terrorist financing, proliferation financing, foreign bribery, tax evasion schemes, hawala networks, immigration fraud, or similar, and  
+- Transaction metrics show low volume, no flags, or apparently normal patterns.
+Rationale:  
+- All sleeper‑trap successes follow this rule: despite benign metrics, the agent correctly scored high risk when Interpol/AUSTRAC/AFP or detailed whistleblower reports described the client as a facilitator or key node.  
+- Where scores were still only medium (some sleeper cases), they should in fact have been high according to the ground truth.  
+- The agent must adopt a principle: “Specific, credible adverse intelligence about this client is a stronger signal than absence of quantitative anomalies.”
+
+
+[Rule 10]: For student / gig‑economy / peer‑to‑peer profiles, combine “many small inflows from multiple senders” plus mule‑network news as a strong laundering indicator even if no thresholds are triggered.
+Applies when:  
+- Fan‑in is elevated (typically mid‑teens to ~20) with many small/mid‑sized deposits (avg < $1,000), total volumes in the tens of thousands; AND  
+- Qualitative intelligence explicitly discusses money mule scams, account‑lending, students or gig workers being recruited to receive and forward funds, or a specific prosecution of a similar profile.
+Rationale:  
+- In multiple smurf traps (students, ride‑share/gig accounts), the transaction pattern alone looked benign and generated no automated flags, but news clearly tied that pattern to mule use.  
+- Correct cases synthesised both: “fan‑in near threshold + student/gig context + mule‑ring article ⇒ elevated/high risk.”  
+- The agent should treat this combination as qualitatively equivalent to a strong risk flag even if automated thresholds aren’t crossed.
+
+
+[Rule 11]: Distinguish “client‑specific adverse intelligence” from “generic demographic risk” and weigh them very differently.
+Applies when:  
+- Articles either (a) clearly identify the client as a participant in a criminal scheme, or (b) merely warn that some members of a demographic (students, gig workers, account‑lenders) are being targeted.
+Rationale:  
+- In some smurf traps, the agent only partially escalated risk (medium) despite intelligence that very closely matched the client’s identity and role (e.g., a named student convicted for mule activity).  
+- Generic warnings (“police warn students may be recruited”) should nudge risk up modestly; specific attributions (“this student/account was used to launder proceeds”) should drive risk high.  
+- The agent must explicitly classify each article as client‑specific vs. general‑population, and scale the weight accordingly.
+
+
+[Rule 12]: Do not double‑count quantitative risk: once a metric is fully explained by benign context, it should stop contributing significant weight.
+Applies when:  
+- A risk flag (high fan‑in, high fan‑out, high volume, high avg amount) can be wholly mapped to described operational processes (payroll, ticket sales, medical billing, vending routes, charity campaigns), and  
+- No residual unexplained anomaly remains after this mapping.
+Rationale:  
+- In many false positives, the agent narratively accepted the benign explanation and yet still carried the original weight of the flag into the final score (e.g., “high fan‑in is explained by donors, but still medium 60”).  
+- Correct cases show that when the metrics are fully reconciled (e.g., car sale prices, typical medical invoices), the residual risk is low.  
+- The agent should conceptually “zero out” a flag once it’s fully accounted for, rather than “moderately reduce” its impact.
+
+
+[Rule 13]: Treat explicit clean‑audit / regulator‑comfort signals as meaningful mitigating evidence when consistent with the metrics.
+Applies when:  
+- Articles mention regulator audits passed, clean ACNC/AUSTRAC history, or statements like “no irregularities found”, and  
+- Metrics are high but operationally explainable (e.g., high‑turnover casino, compliant clinic).
+Rationale:  
+- Some high‑roller and payroll traps ignored that regulators had scrutinised and not found AML issues, focusing only on “increased scrutiny” language.  
+- In correct cases, such as audited charities and regulated professionals, this kind of statement rightly helped support an innocent interpretation.  
+- While not conclusive, clean external oversight is a strong mitigating factor when it aligns with other benign signals.
+
+
+[Rule 14]: When two narratives conflict, prioritise concrete, verifiable criminal allegations over generic positive PR, but do not let sector‑wide worry override specific clean client history.
+Applies when:  
+- One article is essentially marketing/positive profile, and another contains detailed allegations of crime, OR  
+- One article describes the client’s legitimate business in depth, and the “negative” article is only about sector‑wide oversight, not the client.
+Rationale:  
+- Correct high‑risk sleeper cases correctly elevated risk when a flattering bio conflicted with detailed AFP/AUSTRAC allegations.  
+- Conversely, several false positives resulted when generic sector‑scrutiny articles were allowed to override strong, concrete descriptions of legitimate operations.  
+- The agent must evaluate: “Is the negative piece about this client and granular (dates, modus operandi, enforcement body)?” If yes, it dominates. If it’s only about the sector, the detailed business description should carry more weight.
+
+
+[Rule 15]: Explicitly test “is there any direct allegation tying this client/account to proceeds of crime?” before assigning medium‑high or high risk on the basis of metrics alone.
+Applies when:  
+- Quantitative thresholds have fired, but qualitative evidence consists only of: generic sector comments, growth stories, or benign operational detail, with no mention of investigations, charges, or suspicion directed at the client.
+Rationale:  
+- Many incorrect medium/high scores were driven solely by thresholds without any direct allegation or even circumstantial link to a scheme (e.g., co‑ops, casinos with general scrutiny announcements, payroll companies).  
+- Correct trap behavior in sleepers and smurfs shows that adverse intelligence dramatically changes the risk profile; the absence of such intelligence should default the agent towards lower risk classifications for ordinary businesses.  
+- Before going >50, the agent should be able to point to at least one client‑specific or pattern‑specific indicator of criminality beyond “big / many / above threshold”.
+
+
+[Rule 16]: For accounts with unremarkable metrics but adverse intelligence describing deliberate “keeping transactions small to avoid detection”, treat the benign metrics as a deception feature, not a mitigating one.
+Applies when:  
+- News or intelligence explicitly states that the scheme deliberately uses small, frequent transactions or low overall volumes to stay under reporting thresholds, and  
+- The client’s metrics match that pattern (modest total, avg < $1,000, no flags).
+Rationale:  
+- Several sleeper‑trap successes (tax agent, immigration fraud, bribery, terrorist facilitation) documented structuring specifically intended to keep below thresholds; the clean metrics were part of the modus operandi.  
+- In these scenarios, “no automated flags” is not mitigating; it is confirmatory of the described tactic.  
+- The agent should invert the usual logic: benign metrics plus detailed “stay under the radar” intelligence ⇒ high risk.
+
+
+[Rule 17]: Always align the numerical score range with your verbal assessment and evidence strength.
+Applies when:  
+- The narrative states “significant/alarming concerns”, connects client directly to serious crimes, or cites law‑enforcement designations, OR  
+- The narrative emphasises that operations are fully explainable and there is no adverse evidence.
+Rationale:  
+- Some sleeper/smurf cases with serious allegations were scored only in the mid‑60s when ground truth required 70+, indicating under‑translation of qualitative severity into the numeric score.  
+- Conversely, some benign cases with fully explained metrics and no adverse evidence were scored in the 50–70 range.  
+- The agent should calibrate:  
+  - Serious, client‑specific adverse intel ⇒ 70–100.  
+  - Fully explained benign pattern, no adverse intel ⇒ 0–30.  
+  - Conflicting but weakly adverse signals (sector‑wide issues only) ⇒ low to mid‑30s at most.
+
+These rules, taken together, should push the agent to:  
+- Rely less on raw thresholds in isolation;  
+- Give substantial weight to strong, specific benign explanations;  
+- Give overriding weight to credible client‑specific adverse intelligence; and  
+- Calibrate scores so that “normal business patterns with good context” fall clearly into low risk, while “clean metrics but strong adverse intel” are escalated to high risk.
