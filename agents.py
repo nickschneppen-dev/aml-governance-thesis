@@ -7,8 +7,10 @@ LLM-powered nodes accept an optional RunnableConfig so that callbacks
 
 Node types:
   - Deterministic: forensics_scout_node, finalise_node (no LLM)
-  - LLM-powered:   news_scout_node, analyst_node, self_review_node,
-                    auditor_node, revision_node
+  - LLM-powered:   news_scout_node, auditor_node
+  - Factories:     make_analyst_node, make_self_review_node, make_revision_node
+                   (all three used by graph.py; factories maintain the shared
+                   single-context conversation window for intrinsic modes)
 """
 
 from __future__ import annotations
@@ -105,35 +107,6 @@ Return a structured JSON with:
 - reasoning: cite specific metrics and article claims
 """
 
-SELF_REVIEW_PROMPT = """\
-You are the SAME Senior AML Analyst who wrote the report below.  You are now \
-reviewing your own work.
-
-You have access to:
-1. Your original risk assessment.
-2. The RAW quantitative data from the Forensics tool.
-3. The RAW news articles from the search tool.
-4. The News Scout's structured extractions.
-
-## Review Checklist
-
-- Did I consider ALL the evidence, or did I anchor on the first signal I saw?
-- Does my risk score match the evidence?  Would I change it?
-- Did I address conflicting evidence explicitly?
-- Did the News Scout miss any claims from the raw articles?  If so, do those \
-missed claims change my assessment?
-- Could I be wrong?  What would change my mind?
-
-## Rules
-
-- Compare your report's claims against the RAW tool outputs.
-- If you find a discrepancy or missed evidence, REJECT and explain why.
-- If your report is consistent with all the raw data, APPROVE.
-- Provide an adjusted_risk_score reflecting your current view (may match \
-original if approving).
-- Cite specific data points from the raw outputs to support your decision.
-"""
-
 SELF_REVIEW_USER_PROMPT = """\
 Review the risk assessment you just produced above.
 
@@ -158,6 +131,7 @@ missed claims change your assessment?
 original if approving).
 - Cite specific data points from the raw outputs to support your decision.
 """
+
 
 AUDITOR_PROMPT = """\
 You are an independent AML Compliance Auditor.  You did NOT write the report \
@@ -191,26 +165,6 @@ qualitative evidence for adverse intelligence?
 - Cite specific data points from the raw outputs to support your decision.
 """
 
-REVISION_PROMPT = """\
-You are a Senior AML Analyst.  Your previous risk assessment was REJECTED \
-by a reviewer.
-
-You have access to:
-1. Your original assessment.
-2. The reviewer's feedback (including specific citations from the raw data).
-3. The RAW quantitative data from the Forensics tool.
-4. The RAW news articles from the search tool.
-5. The News Scout's structured extractions.
-
-## Instructions
-
-- Carefully read the reviewer's objections and citations.
-- Re-examine the raw data in light of the feedback.
-- Write a REVISED risk assessment that addresses every point raised.
-- You MAY maintain your original score if you can justify it against the \
-reviewer's specific citations.  But you must explain why.
-- Do NOT simply capitulate.  Use the evidence to reach the best conclusion.
-"""
 
 
 # ---------------------------------------------------------------------------
@@ -245,54 +199,7 @@ def news_scout_node(state: AgentState, config: RunnableConfig) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Node: Analyst (LLM -- risk assessment)
-# ---------------------------------------------------------------------------
-def analyst_node(state: AgentState, config: RunnableConfig) -> dict:
-    """Synthesise forensics + news into a structured risk assessment."""
-    llm = get_llm().with_structured_output(AnalystOutput)
-
-    news_summary_str = _format_news_summary(state["news_summary"])
-
-    output: AnalystOutput = llm.invoke([
-        {"role": "system", "content": ANALYST_PROMPT},
-        {"role": "user", "content": (
-            f"## Quantitative Metrics (Source of Truth)\n\n"
-            f"{state['forensics_output']}\n\n"
-            f"## Qualitative Intelligence (News Scout Extractions)\n\n"
-            f"{news_summary_str}\n\n"
-            f"Produce your risk assessment for client {state['client_id']}."
-        )},
-    ], config=config)
-
-    dumped = output.model_dump()
-    return {
-        "analyst_output": dumped,
-        "initial_analyst_output": dumped,  # captured once; revision_node never touches this
-    }
-
-
-# ---------------------------------------------------------------------------
-# Node: Self-Review (LLM -- intrinsic governance)
-# ---------------------------------------------------------------------------
-def self_review_node(state: AgentState, config: RunnableConfig) -> dict:
-    """Continue the analyst's conversation to review its own report.
-
-    Runs within the same context window as the analyst — the reviewer has the
-    analyst's full reasoning chain in memory, not just a serialised output.
-    This is the architectural distinction from auditor_node, which opens a
-    fresh, independent context.
-
-    This is the base (no-rules) variant used by intrinsic mode. For
-    context_engineered and llm_context, graph.py uses make_self_review_node()
-    with rules injected into the review user message.
-    """
-    return make_self_review_node()(state, config)
-
-
-# ---------------------------------------------------------------------------
 # Factory: make_self_review_node
-# Used for context_engineered and llm_context modes.
-# For intrinsic, pass no argument (identical base behaviour).
 # ---------------------------------------------------------------------------
 def make_self_review_node(extra_prompt: str = ""):
     """Return a self_review_node closure with optional rules appended.
@@ -348,43 +255,6 @@ def auditor_node(state: AgentState, config: RunnableConfig) -> dict:
         "review_decision": output.decision,
     }
 
-
-# ---------------------------------------------------------------------------
-# Node: Revision (LLM -- Analyst rewrites after rejection)
-# ---------------------------------------------------------------------------
-def revision_node(state: AgentState, config: RunnableConfig) -> dict:
-    """Analyst revises its report based on reviewer feedback."""
-    llm = get_llm().with_structured_output(AnalystOutput)
-
-    review = state["review_output"]
-    news_summary_str = _format_news_summary(state["news_summary"])
-    analyst_str = _format_analyst_output(state["analyst_output"])
-
-    output: AnalystOutput = llm.invoke([
-        {"role": "system", "content": REVISION_PROMPT},
-        {"role": "user", "content": (
-            f"## Your Original Assessment\n\n"
-            f"{analyst_str}\n\n"
-            f"## Reviewer Feedback\n\n"
-            f"Decision: {review['decision']}\n"
-            f"Adjusted Score: {review['adjusted_risk_score']}\n"
-            f"Reasoning: {review['reasoning']}\n"
-            f"Citations:\n" +
-            "\n".join(f"  - {c}" for c in review["citations"]) +
-            f"\n\n## RAW Quantitative Data\n\n"
-            f"{state['forensics_output']}\n\n"
-            f"## RAW News Articles\n\n"
-            f"{state['news_output']}\n\n"
-            f"## News Scout Extractions\n\n"
-            f"{news_summary_str}\n\n"
-            f"Write your REVISED risk assessment for client {state['client_id']}."
-        )},
-    ], config=config)
-
-    return {
-        "analyst_output": output.model_dump(),
-        "revision_count": state.get("revision_count", 0) + 1,
-    }
 
 
 # ---------------------------------------------------------------------------

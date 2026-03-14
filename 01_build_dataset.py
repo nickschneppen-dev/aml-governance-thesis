@@ -1,21 +1,41 @@
-"""
-01_build_dataset.py  --  Generate the Thesis Benchmark (n=50).
+""""
+01_build_dataset.py  --  Generate the Thesis Benchmark.
 
 Reads AMLNet_August 2025.csv, engineers network-topology features, and
-selects 50 subjects that test both False Positive AND False Negative reasoning.
+selects subjects that test both False Positive AND False Negative reasoning.
 
-  Group A  - Control Guilty   ( 8): isMoneyLaundering=1, high volume
-  Group B  - Control Innocent ( 8): isMoneyLaundering=0, low risk
+  Test set  (n=168): primary evaluation benchmark — larger for statistical power
+  Train set (n= 86): feeds Kayba/LLM rule synthesis (plateaus quickly after
+                     ~30 error examples; smaller train set is appropriate)
 
-  Group C  - False-Positive Traps (20): LOOKS guilty, IS innocent
-       C1  Charity Trap    (5): High fan-in  mimics collection hub
-       C2  Payroll Trap    (5): High fan-out mimics layering distribution
-       C3  High Roller     (5): Massive volume mimics laundering throughput
-       C4  Structurer      (5): High avg txn mimics structured deposits
+  Group A  - Control Guilty   (16/8): isMoneyLaundering=1, high volume
+  Group B  - Control Innocent (16/8): isMoneyLaundering=0, low risk
 
-  Group D  - False-Negative Traps (14): LOOKS innocent, IS guilty
-       D1  Sleeper         (7): Guilty but low volume + no graph anomalies
-       D2  Smurf           (7): Guilty but high fan-in + small avg amounts
+  Group C  - False-Positive Traps (92/48): LOOKS guilty, IS innocent
+       C1  Charity Trap   (23/12): High fan-in  mimics collection hub
+       C2  Payroll Trap   (23/12): High fan-out mimics layering distribution
+       C3  High Roller    (23/12): Massive volume mimics laundering throughput
+       C4  Structurer     (23/12): High avg txn mimics structured deposits
+
+  Group D  - False-Negative Traps (44/22): LOOKS innocent, IS guilty
+       D1  Sleeper        (22/11): Guilty but low volume + no graph anomalies
+       D2  Smurf          (22/11): Guilty but high fan-in + small avg amounts
+
+  (test/train counts shown; C4 constraint: only 35 qualifying clients in AMLNet)
+
+Generalisation holdout (--holdout-group, train only):
+    Excludes an entire trap category from the train set so that rule-synthesis
+    artefacts (Kayba playbook, LLM-context rules) never see any example from
+    that category.  The test set is unchanged.  Performance on the held-out
+    category in the test evaluation is a pure out-of-distribution test:
+    do the rules generalise to a trap type they were never trained on?
+
+    python 01_build_dataset.py --dataset train --holdout-group C4
+    # → train excludes FP Structurer; test still has 23 C4 cases
+
+Run order:
+    python 01_build_dataset.py --dataset test
+    python 01_build_dataset.py --dataset train [--holdout-group {C1,C2,C3,C4,D1,D2}]
 
 Outputs (all files written with a dataset prefix; test also writes bare copies):
   {dataset}_transactions.csv       -- raw transaction rows for the 50 users
@@ -49,12 +69,28 @@ parser.add_argument(
     help="Dataset prefix for output files (default: test). "
          "Writes {dataset}_client_list.csv, {dataset}_knowledge_base.json, etc.",
 )
+parser.add_argument(
+    "--holdout-group",
+    choices=["C1", "C2", "C3", "C4", "D1", "D2"],
+    default=None,
+    dest="holdout_group",
+    help="(Train only) Exclude an entire trap category so rule-synthesis "
+         "artefacts never see it.  The test set is unchanged.  Performance "
+         "on the held-out category in the test evaluation is an "
+         "out-of-distribution generalisation test.  Ignored for --dataset test.",
+)
 args = parser.parse_args()
+
+if args.holdout_group and args.dataset == "test":
+    print("WARNING: --holdout-group is ignored for --dataset test.")
+    args.holdout_group = None
 
 SRC_CSV = Path("AMLNet_August 2025.csv")
 
 # All outputs use the dataset prefix so train and test never overwrite each other.
-DATASET_PREFIX = f"{args.dataset}_"
+# Holdout runs append "_holdout{group}" so they don't clobber the full train set.
+_holdout_suffix = f"_holdout{args.holdout_group.lower()}" if args.holdout_group else ""
+DATASET_PREFIX = f"{args.dataset}{_holdout_suffix}_"
 OUT_TRANSACTIONS  = Path(f"{DATASET_PREFIX}transactions.csv")
 OUT_KNOWLEDGE     = Path(f"{DATASET_PREFIX}knowledge_base.json")
 OUT_GROUND_TRUTH  = Path(f"{DATASET_PREFIX}ground_truth.csv")
@@ -64,6 +100,59 @@ OUT_CLIENT_METRICS = Path(f"{DATASET_PREFIX}client_metrics.json")
 # Different random seeds per dataset so Group B (random bottom-quartile
 # innocents) draws different clients for train vs test.
 SEED = 42 if args.dataset == "test" else 123
+
+# ---------------------------------------------------------------------------
+# Group sizes — test is the primary evaluation benchmark (n=168).
+# Train only feeds rule synthesis artefacts and does not need to be large.
+# C4 (avg_amount > $1,000) has only 35 qualifying clients in AMLNet total,
+# so test=23 + train=12 = 35 exhausts the pool exactly.
+# ---------------------------------------------------------------------------
+if args.dataset == "test":
+    N_CTRL_GUILTY   = 16
+    N_CTRL_INNOCENT = 16
+    N_CHARITY       = 23
+    N_PAYROLL       = 23
+    N_HIGHROLLER    = 23
+    N_STRUCTURER    = 23
+    N_SLEEPER       = 22
+    N_SMURF         = 22
+else:
+    N_CTRL_GUILTY   = 8
+    N_CTRL_INNOCENT = 8
+    N_CHARITY       = 12
+    N_PAYROLL       = 12
+    N_HIGHROLLER    = 12
+    N_STRUCTURER    = 12
+    N_SLEEPER       = 11
+    N_SMURF         = 11
+
+# ---------------------------------------------------------------------------
+# Generalisation holdout (train only)
+# Zero out the held-out group so pick() is skipped and its IDs are [].
+# The group still appears in the test set — performance there is the OOD test.
+# ---------------------------------------------------------------------------
+HOLDOUT_GROUP = args.holdout_group  # None or "C1".."D2"
+if HOLDOUT_GROUP == "C1":
+    N_CHARITY = 0
+elif HOLDOUT_GROUP == "C2":
+    N_PAYROLL = 0
+elif HOLDOUT_GROUP == "C3":
+    N_HIGHROLLER = 0
+elif HOLDOUT_GROUP == "C4":
+    N_STRUCTURER = 0
+elif HOLDOUT_GROUP == "D1":
+    N_SLEEPER = 0
+elif HOLDOUT_GROUP == "D2":
+    N_SMURF = 0
+
+if HOLDOUT_GROUP:
+    print(f"\n[HOLDOUT] Group {HOLDOUT_GROUP} excluded from train set.\n"
+          f"  Rule-synthesis artefacts will never see this trap type.\n"
+          f"  Test-set performance on {HOLDOUT_GROUP} is the OOD generalisation test.\n")
+
+TOTAL = (N_CTRL_GUILTY + N_CTRL_INNOCENT +
+         N_CHARITY + N_PAYROLL + N_HIGHROLLER + N_STRUCTURER +
+         N_SLEEPER + N_SMURF)
 
 # ---------------------------------------------------------------------------
 # 1. Load data
@@ -154,62 +243,89 @@ def pick(pool: pd.DataFrame, n: int, label: str) -> list[str]:
     return ids
 
 
-# ── Group A: Control Guilty (8) — top by volume ──
+# ── Group A: Control Guilty — top by volume ──
 guilty_pool = guilty_all.sort_values("total_volume", ascending=False)
-ctrl_guilty_ids = pick(guilty_pool, 8, "A: Control Guilty")
+ctrl_guilty_ids = pick(guilty_pool, N_CTRL_GUILTY, "A: Control Guilty")
 
-# ── Group B: Control Innocent (8) — bottom-quartile volume ──
+# ── Group B: Control Innocent — bottom-quartile volume ──
 q25 = innocent_all["total_volume"].quantile(0.25)
 innocent_pool = (
     innocent_all[innocent_all["total_volume"] < q25]
     .sample(frac=1, random_state=SEED)
 )
-ctrl_innocent_ids = pick(innocent_pool, 8, "B: Control Innocent")
+ctrl_innocent_ids = pick(innocent_pool, N_CTRL_INNOCENT, "B: Control Innocent")
 
-# ── Group C: False-Positive Traps (20) — innocent but looks guilty ──
+# ── Group C: False-Positive Traps — innocent but looks guilty ──
+# Groups with N_* == 0 have been held out; their id lists stay empty.
 
-# C1 - Charity (5): highest fan-in among innocents
-charity_pool = innocent_all.sort_values("fan_in", ascending=False)
-charity_ids = pick(charity_pool, 5, "C1: FP Charity (fan-in)")
+# C1 - Charity: highest fan-in among innocents
+if N_CHARITY > 0:
+    charity_pool = innocent_all.sort_values("fan_in", ascending=False)
+    charity_ids = pick(charity_pool, N_CHARITY, "C1: FP Charity (fan-in)")
+else:
+    charity_ids = []
+    print(f"  {'C1: FP Charity (fan-in)':25s}  HELD OUT")
 
-# C2 - Payroll (5): highest fan-out among innocents
-payroll_pool = innocent_all.sort_values("fan_out", ascending=False)
-payroll_ids = pick(payroll_pool, 5, "C2: FP Payroll (fan-out)")
+# C2 - Payroll: highest fan-out among innocents
+if N_PAYROLL > 0:
+    payroll_pool = innocent_all.sort_values("fan_out", ascending=False)
+    payroll_ids = pick(payroll_pool, N_PAYROLL, "C2: FP Payroll (fan-out)")
+else:
+    payroll_ids = []
+    print(f"  {'C2: FP Payroll (fan-out)':25s}  HELD OUT")
 
-# C3 - High Roller (5): highest total volume among innocents
-highroller_pool = innocent_all.sort_values("total_volume", ascending=False)
-highroller_ids = pick(highroller_pool, 5, "C3: FP High Roller (volume)")
+# C3 - High Roller: highest total volume among innocents
+if N_HIGHROLLER > 0:
+    highroller_pool = innocent_all.sort_values("total_volume", ascending=False)
+    highroller_ids = pick(highroller_pool, N_HIGHROLLER, "C3: FP High Roller (volume)")
+else:
+    highroller_ids = []
+    print(f"  {'C3: FP High Roller (volume)':25s}  HELD OUT")
 
-# C4 - Structurer (5): highest avg transaction among innocents
-structurer_pool = innocent_all.sort_values("avg_amount", ascending=False)
-structurer_ids = pick(structurer_pool, 5, "C4: FP Structurer (avg_amt)")
+# C4 - Structurer: highest avg transaction among innocents
+#   Hard constraint: only 35 qualifying clients in AMLNet (avg_amount > $1,000).
+#   test=23 + train=12 = 35 exhausts the entire pool.
+if N_STRUCTURER > 0:
+    structurer_pool = innocent_all.sort_values("avg_amount", ascending=False)
+    structurer_ids = pick(structurer_pool, N_STRUCTURER, "C4: FP Structurer (avg_amt)")
+else:
+    structurer_ids = []
+    print(f"  {'C4: FP Structurer (avg_amt)':25s}  HELD OUT")
 
 fp_ids = charity_ids + payroll_ids + highroller_ids + structurer_ids
 
-# ── Group D: False-Negative Traps (14) — guilty but looks innocent ──
+# ── Group D: False-Negative Traps — guilty but looks innocent ──
 
-# D1 - Sleeper (7): guilty, lowest volume, no graph anomalies
+# D1 - Sleeper: guilty, lowest volume, no graph anomalies
 #   Data constraint: min guilty vol is ~$29k, so we take the bottom of the
 #   guilty pool.  These users have unremarkable fan-in/fan-out and low txn
 #   counts — nothing in the quantitative data screams "laundering".
 #   The ONLY signal is qualitative (knowledge base intelligence).
-sleeper_pool = guilty_all.sort_values("total_volume", ascending=True)
-sleeper_ids = pick(sleeper_pool, 7, "D1: FN Sleeper (low vol)")
+if N_SLEEPER > 0:
+    sleeper_pool = guilty_all.sort_values("total_volume", ascending=True)
+    sleeper_ids = pick(sleeper_pool, N_SLEEPER, "D1: FN Sleeper (low vol)")
+else:
+    sleeper_ids = []
+    print(f"  {'D1: FN Sleeper (low vol)':25s}  HELD OUT")
 
-# D2 - Smurf (7): guilty, high fan-in but small avg amounts
+# D2 - Smurf: guilty, high fan-in but small avg amounts
 #   These look like normal people receiving many small payments (like
 #   students or gig workers) — but they're actually money mules.
 #   Agent must cross-reference knowledge base to catch them.
-smurf_pool = (
-    guilty_all[guilty_all["avg_amount"] < 1000]
-    .sort_values("fan_in", ascending=False)
-)
-smurf_ids = pick(smurf_pool, 7, "D2: FN Smurf (fan-in+small)")
+if N_SMURF > 0:
+    smurf_pool = (
+        guilty_all[guilty_all["avg_amount"] < 1000]
+        .sort_values("fan_in", ascending=False)
+    )
+    smurf_ids = pick(smurf_pool, N_SMURF, "D2: FN Smurf (fan-in+small)")
+else:
+    smurf_ids = []
+    print(f"  {'D2: FN Smurf (fan-in+small)':25s}  HELD OUT")
 
 fn_ids = sleeper_ids + smurf_ids
 
 all_ids = ctrl_guilty_ids + ctrl_innocent_ids + fp_ids + fn_ids
-assert len(all_ids) == 50, f"Expected 50 IDs, got {len(all_ids)}"
+assert len(all_ids) == TOTAL, f"Expected {TOTAL} IDs, got {len(all_ids)}"
 
 # ---------------------------------------------------------------------------
 # 4. Save transactions CSV
@@ -402,6 +518,172 @@ GUILTY_KB: list[dict] = [
                   "due diligence. Industry sources say the entity's beneficial "
                   "ownership structure could not be verified."},
      ]},
+    # ── entries 8–15 added for expanded dataset ──
+    {"entity_type": "Shell Company",
+     "articles": [
+         {"headline": "AFP seizes cryptocurrency linked to Marshall Islands entity",
+          "source": "AFP Media Release",
+          "body": "The AFP's cybercrime operations centre executed orders to freeze "
+                  "cryptocurrency wallets linked to a Marshall Islands-registered "
+                  "shell company. The entity was used to convert drug proceeds into "
+                  "digital assets before cashing out through Australian exchanges. "
+                  "Blockchain analytics traced over $3.8 million in illicit flows "
+                  "over an eight-month period. Three individuals have been charged."},
+         {"headline": "Crypto exchanges warned over Marshall Islands entity links",
+          "source": "AUSTRAC",
+          "body": "AUSTRAC issued a targeted financial intelligence notice to "
+                  "registered digital currency exchanges warning them of a "
+                  "Marshall Islands-incorporated entity identified as a "
+                  "layering vehicle for narcotics proceeds. The entity's "
+                  "wallets have been flagged across multiple blockchain networks. "
+                  "Exchanges are reminded to report any transactions with the "
+                  "entity under their suspicious matter reporting obligations."},
+     ]},
+    {"entity_type": "Shell Company",
+     "articles": [
+         {"headline": "ATO identifies Isle of Man structure in offshore asset concealment",
+          "source": "ATO Media Release",
+          "body": "The ATO's Tax Avoidance Taskforce has identified an "
+                  "Isle of Man-registered company used by an Australian resident "
+                  "to conceal offshore assets. The entity received transfers from "
+                  "Australian bank accounts disguised as consulting fee payments. "
+                  "No legitimate consulting services were ever rendered. The matter "
+                  "has been referred to the Commonwealth DPP for prosecution."},
+         {"headline": "Isle of Man trust structure at centre of Australian tax fraud case",
+          "source": "Sydney Morning Herald",
+          "body": "A Federal Court case revealed that an Australian businessman "
+                  "used an Isle of Man discretionary trust to repatriate offshore "
+                  "funds without declaring them as income. The structure involved "
+                  "a series of interlinked entities designed to obscure beneficial "
+                  "ownership. The ATO assessed $6.4 million in unpaid tax and "
+                  "penalties. The defendant faces up to five years' imprisonment "
+                  "if found guilty."},
+     ]},
+    {"entity_type": "Shell Company",
+     "articles": [
+         {"headline": "Joint investigation targets Hong Kong trade finance fraud",
+          "source": "ABF Media Release",
+          "body": "A joint operation by the AFP and Australian Border Force "
+                  "dismantled a trade finance fraud scheme centred on a "
+                  "Hong Kong shell company. The entity issued fictitious "
+                  "invoices to Australian import businesses, generating "
+                  "documentary cover for illegal fund transfers. The scheme "
+                  "defrauded multiple banks of approximately $11 million. "
+                  "Extradition proceedings are underway."},
+         {"headline": "Hong Kong company linked to dual-invoice export scheme",
+          "source": "Australian Financial Review",
+          "body": "Court filings reveal that a Hong Kong-incorporated entity "
+                  "maintained two sets of shipping invoices — one showing "
+                  "goods at market value for bank financing, and a second "
+                  "at a fraction of the price for customs clearance. The "
+                  "scheme enabled systematic over-financing of import "
+                  "transactions. AUSTRAC received 14 suspicious matter reports "
+                  "referencing the entity before the investigation was launched."},
+     ]},
+    {"entity_type": "Shell Company",
+     "articles": [
+         {"headline": "Dubai-based entity linked to Australian real estate laundering",
+          "source": "Sydney Morning Herald",
+          "body": "An AUSTRAC financial intelligence unit analysis identified "
+                  "a Dubai-registered company as the source of funds used to "
+                  "purchase three Sydney properties. The purchases were made "
+                  "through a series of layered transfers obscuring the "
+                  "beneficial owner's identity. The properties are now subject "
+                  "to a restraining order under the Proceeds of Crime Act. "
+                  "The Australian owner of the Dubai entity is under investigation."},
+         {"headline": "Real estate sector warned on UAE-origin high-risk funds",
+          "source": "AUSTRAC",
+          "body": "AUSTRAC published guidance for real estate agents and "
+                  "conveyancers on identifying high-risk fund flows originating "
+                  "from UAE-registered entities. The guidance follows a series "
+                  "of suspicious matter reports linking property purchases to "
+                  "companies with no verified UAE business presence. The "
+                  "regulator reminded the sector that real estate remains "
+                  "a high-risk conduit for laundered funds."},
+     ]},
+    {"entity_type": "Shell Company",
+     "articles": [
+         {"headline": "Singapore entity used to smurF drug proceeds into Australia",
+          "source": "AFP Media Release",
+          "body": "The AFP charged five individuals who operated a smurfing "
+                  "network using a Singapore-registered company as the hub. "
+                  "Couriers deposited small amounts at branches across four "
+                  "states, with funds pooled before transfer to the Singapore "
+                  "entity. The total volume over 18 months exceeded $7 million. "
+                  "Two Singaporean nationals have been arrested pending extradition."},
+         {"headline": "AUSTRAC targets Singapore-linked structuring network",
+          "source": "AUSTRAC",
+          "body": "AUSTRAC has shared financial intelligence with Singapore's "
+                  "Monetary Authority identifying a Singapore-incorporated "
+                  "shell company operating a structured deposit network in "
+                  "Australia. The entity directed Australian-based agents to "
+                  "make repeated deposits below the $10,000 reporting threshold. "
+                  "Banks that identified the pattern filed a combined 31 "
+                  "suspicious matter reports."},
+     ]},
+    {"entity_type": "Shell Company",
+     "articles": [
+         {"headline": "Court freezes assets of Labuan entity in drug money probe",
+          "source": "Federal Court of Australia",
+          "body": "The Federal Court made freezing orders over all Australian "
+                  "assets associated with a Labuan-incorporated company following "
+                  "an AFP application. Investigators allege the entity was used "
+                  "to receive proceeds from a Tasmanian drug importation "
+                  "network. Funds were transferred to Labuan through a "
+                  "correspondent banking chain designed to obscure origins. "
+                  "The estimated value of frozen assets is $5.2 million."},
+         {"headline": "Malaysian offshore centre under scrutiny for Australian AML risks",
+          "source": "Australian Financial Review",
+          "body": "Financial crime analysts have warned that Labuan, Malaysia's "
+                  "offshore financial centre, is increasingly being exploited "
+                  "by Australian-linked criminal networks. AUSTRAC has filed "
+                  "intelligence-sharing requests with Malaysia's FIU after "
+                  "identifying multiple Labuan entities receiving unexplained "
+                  "Australian fund flows. The entities typically have no "
+                  "declared business activity in Labuan."},
+     ]},
+    {"entity_type": "Shell Company",
+     "articles": [
+         {"headline": "Legal professional disbarred for enabling Liechtenstein laundering scheme",
+          "source": "Law Society Journal",
+          "body": "The NSW Law Society cancelled the practising certificate "
+                  "of a Sydney solicitor found to have established and administered "
+                  "a Liechtenstein foundation on behalf of a client under "
+                  "investigation for money laundering. The solicitor failed to "
+                  "conduct required customer due diligence and knowingly "
+                  "prepared documents that concealed the beneficial owner's "
+                  "identity. Criminal charges are pending."},
+         {"headline": "Liechtenstein foundation linked to proceeds of NSW organised crime",
+          "source": "Sydney Morning Herald",
+          "body": "NSW Police allege that a Liechtenstein-registered private "
+                  "foundation received over $9 million in funds traced to "
+                  "an organised crime syndicate based in western Sydney. "
+                  "The foundation's structure was deliberately complex, "
+                  "involving three layers of nominee trustees in different "
+                  "jurisdictions. Police say the structure was designed to "
+                  "make asset recovery as difficult as possible."},
+     ]},
+    {"entity_type": "Shell Company",
+     "articles": [
+         {"headline": "ASIC cancels licence of operator linked to Cayman hedge fund fraud",
+          "source": "ASIC Media Release",
+          "body": "ASIC cancelled the Australian financial services licence "
+                  "of a Sydney-based operator after finding the firm channelled "
+                  "investor funds into a Cayman Islands hedge fund controlled "
+                  "by an associate. The fund had no audited accounts and "
+                  "returned no investor capital. ASIC estimates total losses "
+                  "exceed $14 million. The operator faces civil and criminal "
+                  "proceedings."},
+         {"headline": "Investors lost millions in Cayman fund scheme, court hears",
+          "source": "Australian Financial Review",
+          "body": "Court evidence revealed that a Cayman Islands fund used "
+                  "new investor money to pay redemptions to earlier investors, "
+                  "operating a Ponzi structure for at least three years. "
+                  "Hundreds of Australian retail investors were affected. "
+                  "The fund's Australian promoter faces charges of fraud, "
+                  "dishonest conduct, and dealing with proceeds of crime. "
+                  "ASIC has applied for the promoter's assets to be frozen."},
+     ]},
 ]
 
 # ── Group B: Control Innocent — 2 benign articles each ──
@@ -543,6 +825,161 @@ INNOCENT_KB: list[dict] = [
                   "the annual general meeting. The chamber reported a 12 "
                   "percent increase in membership over the past year."},
      ]},
+    # ── entries 8–15 added for expanded dataset ──
+    {"entity_type": "Individual",
+     "articles": [
+         {"headline": "Primary school teacher named state finalist in education awards",
+          "source": "NSW Department of Education",
+          "body": "A primary school teacher from western Sydney was named a "
+                  "state finalist in the annual Excellence in Teaching awards. "
+                  "Colleagues praised the teacher's innovative approach to "
+                  "literacy and commitment to students from disadvantaged "
+                  "backgrounds. The teacher has worked at the same public "
+                  "school for eleven years."},
+         {"headline": "School achieves improved NAPLAN results after literacy push",
+          "source": "Education News Australia",
+          "body": "A western Sydney public school reported above-average "
+                  "improvements in NAPLAN reading and writing scores, "
+                  "attributed to a school-wide literacy program led by "
+                  "dedicated classroom teachers. The principal credited "
+                  "staff consistency and community engagement for the results. "
+                  "The school has seen enrolment grow by 15 percent over "
+                  "three years."},
+     ]},
+    {"entity_type": "Individual",
+     "articles": [
+         {"headline": "Registered nurse commended for aged-care patient advocacy",
+          "source": "Australian Nursing Federation",
+          "body": "A registered nurse working in aged care received a "
+                  "commendation from the Australian Nursing and Midwifery "
+                  "Federation for sustained patient advocacy. The nurse "
+                  "has raised concerns about staffing ratios through official "
+                  "channels and helped residents navigate complaint processes. "
+                  "The ANF praised the individual's professionalism and "
+                  "ethical conduct."},
+         {"headline": "Aged-care workforce stability highlighted in sector report",
+          "source": "Aged Care Quality and Safety Commission",
+          "body": "A sector report noted that facilities with low staff "
+                  "turnover consistently received higher quality ratings. "
+                  "Several long-serving nurses were cited as examples of the "
+                  "stability that underpins person-centred care. The commission "
+                  "recommended incentive programs to retain experienced nursing "
+                  "staff in residential aged care."},
+     ]},
+    {"entity_type": "Individual",
+     "articles": [
+         {"headline": "Third-generation farmer transitions to precision agriculture",
+          "source": "Farm Weekly",
+          "body": "A grain farmer in central NSW has embraced precision "
+                  "agriculture technology, using soil sensors and satellite "
+                  "data to optimise crop yields. The farm, operated by the "
+                  "same family for three generations, covers 480 hectares. "
+                  "The farmer credits lower input costs and steady commodity "
+                  "prices for consistent profitability over the past decade."},
+         {"headline": "Rural bank branch supports local farming community",
+          "source": "Bank Newsletter",
+          "body": "A regional bank branch highlighted its long-standing "
+                  "support for local farming families, noting that many "
+                  "accounts have been held for multiple generations. "
+                  "The branch manager said farming clients typically show "
+                  "predictable seasonal banking patterns aligned with "
+                  "harvest and input purchase cycles."},
+     ]},
+    {"entity_type": "Individual",
+     "articles": [
+         {"headline": "Disability support worker receives sector excellence award",
+          "source": "National Disability Services",
+          "body": "A disability support worker was recognised at the NDS "
+                  "Excellence Awards for outstanding support of participants "
+                  "under the NDIS. The worker has supported the same clients "
+                  "for several years, providing consistency and building "
+                  "trusted relationships. The organisation cited the worker's "
+                  "dedication as exemplary for the sector."},
+         {"headline": "NDIS provider praised for workforce stability",
+          "source": "NDIS Quality and Safeguards Commission",
+          "body": "The NDIS Quality and Safeguards Commission highlighted "
+                  "a registered provider in its annual report as an example "
+                  "of best practice in workforce retention. Long-serving "
+                  "support workers were credited with driving consistent, "
+                  "person-centred outcomes for participants. The provider "
+                  "has maintained full accreditation since joining the scheme."},
+     ]},
+    {"entity_type": "Individual",
+     "articles": [
+         {"headline": "Public librarian leads literacy campaign for new migrants",
+          "source": "Local Gazette",
+          "body": "A public librarian at a suburban branch has developed "
+                  "a successful English literacy program for newly arrived "
+                  "migrants. The program now attracts over 60 participants "
+                  "each week and has been recognised by the state library "
+                  "network as a model for community engagement. The librarian "
+                  "volunteers additional hours to keep the program running."},
+         {"headline": "Council library wins state award for community programs",
+          "source": "Local Council Bulletin",
+          "body": "The local council's library service was named a state "
+                  "finalist in the public library excellence awards. Judges "
+                  "cited the branch's innovative community outreach programs "
+                  "and high borrower engagement rates. The council said it "
+                  "would expand the service's operating hours following the "
+                  "recognition."},
+     ]},
+    {"entity_type": "Individual",
+     "articles": [
+         {"headline": "Social worker featured in government family services report",
+          "source": "Department of Communities",
+          "body": "A frontline social worker was featured in a government "
+                  "report on effective family support services. The individual "
+                  "has worked with families experiencing domestic hardship for "
+                  "eight years and is described by supervisors as skilled at "
+                  "building trust with vulnerable clients. The department "
+                  "cited the worker's case outcomes as above the sector average."},
+         {"headline": "Family support services show positive outcomes in annual review",
+          "source": "Community Services Quarterly",
+          "body": "An annual review of state-funded family support services "
+                  "found that families engaged with experienced frontline "
+                  "workers had significantly better outcomes in housing "
+                  "stability and school attendance. The review recommended "
+                  "investing in experienced worker retention rather than "
+                  "cycling through contractors."},
+     ]},
+    {"entity_type": "Individual",
+     "articles": [
+         {"headline": "Licensed electrician praised for safe installation work on schools program",
+          "source": "Fair Work Ombudsman",
+          "body": "A licensed electrician was commended by NSW Fair Work "
+                  "inspectors following a routine audit of a government "
+                  "schools electrical upgrade program. All work was completed "
+                  "on time, within budget, and met AS/NZS safety standards. "
+                  "The individual holds a current Class A licence and has "
+                  "no prior compliance breaches on record."},
+         {"headline": "Electrical trades sector sees strong employment in infrastructure boom",
+          "source": "Master Electricians Australia",
+          "body": "Master Electricians Australia reported strong demand for "
+                  "licensed electricians across the infrastructure and "
+                  "residential sectors. Long-serving licensed tradespeople "
+                  "with clean compliance records were highlighted as "
+                  "highly sought after by public works contractors. "
+                  "The association noted increased investment in apprentice "
+                  "training to address the skills gap."},
+     ]},
+    {"entity_type": "Individual",
+     "articles": [
+         {"headline": "Childcare educator receives early learning excellence recognition",
+          "source": "Australian Children's Education and Care Quality Authority",
+          "body": "An early childhood educator received recognition from ACECQA "
+                  "for sustained excellence in implementing the National Quality "
+                  "Framework. The educator has worked at the same long-day care "
+                  "centre for nine years and mentors newly qualified staff. "
+                  "The centre holds an 'Exceeding' rating across all quality areas."},
+         {"headline": "Childcare sector wages and workforce stability under review",
+          "source": "Fair Work Commission",
+          "body": "The Fair Work Commission commenced a review of wages in "
+                  "the early childhood education sector following an application "
+                  "by sector unions. Employers and unions agreed that long-term "
+                  "workforce stability is essential for child outcomes. Experienced "
+                  "educators with sustained tenure at single services were "
+                  "highlighted as a key quality indicator."},
+     ]},
 ]
 
 # ── Group C1: FP Charity — mixed signals (alibi + ambiguous noise) ──
@@ -646,6 +1083,371 @@ CHARITY_KB: list[dict] = [
                   "growth. The charity emphasised that the review is not linked "
                   "to any specific concern or complaint."},
      ]},
+    # ── entries 5–22 added for expanded dataset ──
+    {"entity_type": "Registered NGO",
+     "articles": [
+         {"headline": "Veterans welfare foundation receives record number of donations",
+          "source": "Returned Services League",
+          "body": "A veterans welfare charity reported its highest ever "
+                  "donation intake following an ANZAC Day appeal supported "
+                  "by major corporate partners. The foundation distributed "
+                  "emergency financial assistance to over 600 veterans and "
+                  "their families in the past year. The ACNC confirmed the "
+                  "charity's registration and financial reporting are fully current."},
+         {"headline": "Charity regulator notes sector governance improvements",
+          "source": "ACNC Media Release",
+          "body": "The ACNC's annual compliance report noted broad improvements "
+                  "in charity governance standards, with fewer compliance "
+                  "concerns raised compared to prior years. Smaller charities "
+                  "were encouraged to use the ACNC's free governance resources. "
+                  "No specific organisations were named in the review."},
+     ]},
+    {"entity_type": "Registered NGO",
+     "articles": [
+         {"headline": "Homelessness charity opens sixth shelter in NSW",
+          "source": "The Guardian AU",
+          "body": "A registered homelessness charity opened its sixth "
+                  "emergency shelter in NSW, funded by a combination of "
+                  "government grants and over 2,000 individual donors. "
+                  "The organisation provides crisis accommodation, meals, "
+                  "and case management to rough sleepers. Its ACNC annual "
+                  "information statement shows a clean compliance record."},
+         {"headline": "ACNC highlights concerns over unregistered homeless service operators",
+          "source": "ACNC Media Release",
+          "body": "The ACNC urged the public to donate only to registered "
+                  "charities after several unregistered operators were found "
+                  "soliciting donations for homelessness services without "
+                  "proper oversight. The commission noted that registered "
+                  "charities with current compliance status are required "
+                  "to publish annual financial statements. No registered "
+                  "charities were implicated."},
+     ]},
+    {"entity_type": "Registered NGO",
+     "articles": [
+         {"headline": "Indigenous land care group receives major federal grant",
+          "source": "Department of Climate Change",
+          "body": "An Indigenous-led land care organisation was awarded a "
+                  "$2.1 million federal grant to expand its conservation "
+                  "programs across remote communities. The organisation "
+                  "employs 45 community members and receives donations "
+                  "from over 800 individual supporters. Its ACNC registration "
+                  "and financial disclosures are fully up to date."},
+         {"headline": "Questions raised over grant administration in Indigenous sector",
+          "source": "The Australian",
+          "body": "A parliamentary committee report raised concerns about "
+                  "administration processes for Indigenous affairs grants "
+                  "across the sector, citing inconsistent acquittal reporting. "
+                  "The report noted the concerns were systemic and did not "
+                  "identify any specific organisations as non-compliant. "
+                  "Government agencies were asked to strengthen grant "
+                  "oversight frameworks."},
+     ]},
+    {"entity_type": "Registered NGO",
+     "articles": [
+         {"headline": "Cancer support foundation surpasses $5 million in annual fundraising",
+          "source": "Cancer Council Australia",
+          "body": "A cancer patient support foundation exceeded $5 million "
+                  "in fundraising for the first time, driven by a national "
+                  "relay walk campaign involving 12,000 participants. "
+                  "Funds support financial assistance, transport subsidies, "
+                  "and counselling for cancer patients and carers. "
+                  "The foundation's audited accounts are published annually."},
+         {"headline": "Charity watchdog notes uptick in donations to health charities",
+          "source": "Third Sector News",
+          "body": "Giving trends data showed a significant increase in "
+                  "donations to health and disease-specific charities, "
+                  "partly driven by pandemic-related awareness. The sector "
+                  "is predominantly dominated by long-established, "
+                  "well-governed organisations. ACNC compliance rates "
+                  "among health charities remain among the highest across "
+                  "charity categories."},
+     ]},
+    {"entity_type": "Registered NGO",
+     "articles": [
+         {"headline": "Food bank charity feeds 80,000 households in financial year",
+          "source": "Foodbank Australia",
+          "body": "A regional food bank affiliated with Foodbank Australia "
+                  "distributed food relief to 80,000 households over the "
+                  "financial year, up 18 percent from the prior year. "
+                  "Funding came from supermarket partnerships, government "
+                  "contracts, and over 3,500 individual donors. The "
+                  "organisation maintains full ACNC compliance and "
+                  "publishes quarterly impact reports."},
+         {"headline": "Food charity sector faces scrutiny over volunteer management practices",
+          "source": "Third Sector News",
+          "body": "A sector analysis highlighted inconsistencies in how "
+                  "food charities manage volunteers, particularly around "
+                  "screening and work health and safety compliance. "
+                  "The report noted that organisations with formal "
+                  "governance structures and paid management had stronger "
+                  "volunteer programs. No individual organisations were "
+                  "named in the analysis."},
+     ]},
+    {"entity_type": "Registered NGO",
+     "articles": [
+         {"headline": "Disability advocacy charity launches national awareness campaign",
+          "source": "People with Disability Australia",
+          "body": "A disability advocacy organisation launched a national "
+                  "campaign calling for reforms to NDIS independent assessments. "
+                  "The charity receives funding from over 1,200 individual "
+                  "supporters and a government advocacy grant. Its ACNC "
+                  "annual information statement reflects fully up-to-date "
+                  "financial reporting. The campaign has attracted bipartisan "
+                  "political support."},
+         {"headline": "Disability sector charities flagged for governance review",
+          "source": "ACNC Media Release",
+          "body": "The ACNC announced it would conduct a targeted governance "
+                  "review of a subset of disability-focused charities following "
+                  "concerns raised by sector stakeholders about board independence. "
+                  "The regulator emphasised the review was not linked to any "
+                  "financial irregularities and was a routine monitoring activity. "
+                  "Selected organisations would be contacted directly."},
+     ]},
+    {"entity_type": "Registered NGO",
+     "articles": [
+         {"headline": "Refugee settlement charity supports 1,200 new arrivals",
+          "source": "Refugee Council of Australia",
+          "body": "A registered refugee settlement organisation assisted "
+                  "1,200 newly arrived refugees and humanitarian entrants "
+                  "with housing, employment, and language support over the "
+                  "past financial year. The charity receives state and "
+                  "federal government funding alongside donations from "
+                  "over 700 individuals and church communities. "
+                  "ACNC registration is current."},
+         {"headline": "Immigration charities under scrutiny over people-smuggling risks",
+          "source": "The Australian",
+          "body": "A government discussion paper raised policy questions "
+                  "about oversight of charities providing migration advice "
+                  "and settlement services, citing concerns about potential "
+                  "misuse by people-smuggling networks in other jurisdictions. "
+                  "The paper noted Australian registered charities operate "
+                  "within ACNC and OMARA oversight frameworks and are not "
+                  "specifically implicated. Consultation is ongoing."},
+     ]},
+    {"entity_type": "Registered NGO",
+     "articles": [
+         {"headline": "Suicide prevention charity expands crisis line capacity",
+          "source": "Beyond Blue",
+          "body": "A registered suicide prevention charity expanded its "
+                  "telephone crisis support service, adding 40 counsellors "
+                  "funded by a federal government grant and a $1.4 million "
+                  "community fundraising campaign. The charity handled over "
+                  "60,000 contacts in the past year. Its annual report "
+                  "and audited financials are published on the ACNC register."},
+         {"headline": "Mental health charity sector faces governance workforce pressures",
+          "source": "Third Sector News",
+          "body": "A workforce analysis found that mental health and crisis "
+                  "support charities are experiencing difficulty retaining "
+                  "qualified clinical governance staff amid competition "
+                  "from the NDIS and public health sectors. The analysis "
+                  "recommended that boards invest in governance resources "
+                  "to avoid compliance gaps. It noted no specific "
+                  "non-compliance issues had been identified."},
+     ]},
+    {"entity_type": "Registered NGO",
+     "articles": [
+         {"headline": "Rural health charity funds six GP positions in remote towns",
+          "source": "Rural Doctors Network",
+          "body": "A rural health charity secured philanthropic funding "
+                  "to support six GP placements in remote New South Wales "
+                  "towns that would otherwise have no resident doctor. "
+                  "The charity relies on 1,100 individual donors and two "
+                  "foundation grants. Its ACNC compliance record is clean "
+                  "and financials are independently audited annually."},
+         {"headline": "Rural health funding gaps prompt sector-wide review",
+          "source": "ABC Regional",
+          "body": "A review of rural health funding found that many remote "
+                  "communities rely on a patchwork of charities, government "
+                  "grants, and philanthropy to maintain basic medical services. "
+                  "Reviewers noted this creates financial vulnerability for "
+                  "charities whose funding depends on donor generosity in "
+                  "any given year. The review made no adverse findings "
+                  "about any specific organisation."},
+     ]},
+    {"entity_type": "Registered NGO",
+     "articles": [
+         {"headline": "Women's refuge charity opens second safe house in metro area",
+          "source": "Department of Social Services",
+          "body": "A domestic violence support charity opened a second "
+                  "safe house, funded by a state government crisis housing "
+                  "grant and a public fundraising appeal that attracted "
+                  "over 900 individual donors. The organisation provides "
+                  "crisis accommodation and case management for women and "
+                  "children fleeing violence. The charity's ACNC record "
+                  "is fully compliant."},
+         {"headline": "DV sector charity board governance highlighted in annual review",
+          "source": "ACNC Media Release",
+          "body": "The ACNC's annual review of the domestic violence charity "
+                  "sector noted strong governance practices among established "
+                  "organisations but flagged that newer entrants sometimes "
+                  "lacked formal board structures. The commission provided "
+                  "governance templates and encouraged smaller organisations "
+                  "to seek mentoring from peak bodies. No compliance action "
+                  "was announced against any entity."},
+     ]},
+    {"entity_type": "Registered NGO",
+     "articles": [
+         {"headline": "Environmental land trust receives conservation covenant donations",
+          "source": "Australian Conservation Foundation",
+          "body": "An environmental land trust received donations from "
+                  "2,300 individual supporters to fund the purchase of a "
+                  "conservation covenant over 1,200 hectares of native "
+                  "bushland. The trust works with landholders to protect "
+                  "biodiversity in perpetuity. Its annual accounts are "
+                  "audited and filed with the ACNC."},
+         {"headline": "Environment charity questioned over advocacy activity balance",
+          "source": "The Australian",
+          "body": "A think tank report questioned whether some environmental "
+                  "charities spend an appropriate proportion of funds on "
+                  "charitable purposes versus advocacy, citing the ACNC's "
+                  "guidance on permissible political activities. The ACNC "
+                  "said it receives periodic enquiries on this topic and "
+                  "assesses compliance individually. The report did not "
+                  "name specific organisations as non-compliant."},
+     ]},
+    {"entity_type": "Registered NGO",
+     "articles": [
+         {"headline": "Education charity provides scholarships to 450 disadvantaged students",
+          "source": "Smith Family",
+          "body": "A registered education charity provided learning support "
+                  "and scholarships to 450 students from disadvantaged "
+                  "backgrounds in the current school year. The charity "
+                  "is funded by corporate partners, government grants, and "
+                  "over 1,800 individual donors. Independent evaluation "
+                  "found scholarship recipients significantly improved "
+                  "school attendance and attainment."},
+         {"headline": "Education charity sector compliance rates among sector's best",
+          "source": "ACNC Annual Report",
+          "body": "The ACNC's annual compliance review identified education "
+                  "and scholarship charities as having among the highest "
+                  "rates of on-time financial reporting of any charity "
+                  "sub-sector. Audited accounts were submitted by 97 percent "
+                  "of qualifying education charities. The ACNC noted this "
+                  "reflects strong board governance in the sector."},
+     ]},
+    {"entity_type": "Registered NGO",
+     "articles": [
+         {"headline": "Aged care charity launches $3M fundraising campaign for dementia wing",
+          "source": "Catholic Health Australia",
+          "body": "An aged care charity affiliated with a faith-based "
+                  "organisation launched a public campaign to build a "
+                  "dedicated dementia care wing. The campaign received "
+                  "contributions from over 1,600 donors within the first "
+                  "month. The organisation holds an aged care accreditation "
+                  "and publishes annual ACNC information statements."},
+         {"headline": "Aged care charities navigate royal commission reforms",
+          "source": "Community Care Review",
+          "body": "Aged care charities are implementing governance and "
+                  "quality improvements in response to recommendations from "
+                  "the Royal Commission into Aged Care Quality and Safety. "
+                  "Sector observers noted that faith-based providers with "
+                  "established governance frameworks are generally better "
+                  "placed to meet the new standards. No adverse compliance "
+                  "findings were reported for charities in the review period."},
+     ]},
+    {"entity_type": "Registered NGO",
+     "articles": [
+         {"headline": "Community legal centre awarded government funding increase",
+          "source": "National Association of Community Legal Centres",
+          "body": "A community legal centre received a three-year federal "
+                  "funding renewal to continue providing free legal advice "
+                  "to low-income clients. The centre handled over 2,400 "
+                  "matters in the past year, primarily family law, tenancy, "
+                  "and welfare rights. Individual donations from lawyers "
+                  "and community members supplement the government grant. "
+                  "The centre is ACNC-registered."},
+         {"headline": "Legal aid funding model under review amid demand pressures",
+          "source": "Law Society Journal",
+          "body": "The Law Society flagged concerns about the long-term "
+                  "sustainability of the community legal centre model, "
+                  "noting growing demand and stagnant funding indexation. "
+                  "The Law Society called on governments to increase baseline "
+                  "funding. The review is focused on systemic funding policy "
+                  "and does not raise concerns about any specific centre's "
+                  "operations."},
+     ]},
+    {"entity_type": "Registered NGO",
+     "articles": [
+         {"headline": "Suburban sports club raises $180,000 for new clubrooms",
+          "source": "Local Gazette",
+          "body": "A suburban Australian football club successfully completed "
+                  "a community fundraising drive, attracting contributions "
+                  "from over 600 individual donors, local businesses, and "
+                  "a council grant. The funds will be used to build "
+                  "accessible change rooms meeting disability standards. "
+                  "The club is registered as a charity with the ACNC for "
+                  "its community sport programs."},
+         {"headline": "Sports club charities reminded of ACNC annual reporting obligations",
+          "source": "ACNC Media Release",
+          "body": "The ACNC reminded community sports clubs registered as "
+                  "charities to lodge annual information statements on time. "
+                  "The commission noted that community sport is one of the "
+                  "largest charity sub-sectors by number of organisations. "
+                  "Late reporting may result in the organisation losing its "
+                  "registered charity status and associated tax concessions."},
+     ]},
+    {"entity_type": "Registered NGO",
+     "articles": [
+         {"headline": "Community arts charity receives state arts council funding",
+          "source": "Australia Council for the Arts",
+          "body": "A community arts organisation received a two-year operating "
+                  "grant from the Australia Council to deliver free visual "
+                  "arts workshops in regional communities. The charity engages "
+                  "emerging artists as facilitators and has served over 800 "
+                  "community participants. Its ACNC registration is current "
+                  "and financials are independently reviewed annually."},
+         {"headline": "Arts charities face funding uncertainty amid government budget pressures",
+          "source": "ArtsHub",
+          "body": "Arts and cultural charities flagged concern about funding "
+                  "stability following the federal budget, with some grants "
+                  "programs subject to reallocation. Sector leaders noted "
+                  "that community arts organisations depend heavily on "
+                  "government and philanthropic funding due to limited earned "
+                  "revenue potential. The Australia Council confirmed its "
+                  "grants process remained open and competitive."},
+     ]},
+    {"entity_type": "Registered NGO",
+     "articles": [
+         {"headline": "Children's palliative care charity expands support nurse program",
+          "source": "Palliative Care Australia",
+          "body": "A charity supporting children with life-limiting illness "
+                  "expanded its specialist support nurse program to three "
+                  "new regional areas, funded by a major foundation grant "
+                  "and over 900 individual donor contributions. The nurses "
+                  "provide in-home support to children and their families. "
+                  "The ACNC confirmed the charity's registration and "
+                  "reporting are fully current."},
+         {"headline": "Palliative care charity governance praised by sector regulator",
+          "source": "ACNC",
+          "body": "The ACNC recognised several palliative care charities in "
+                  "its annual report as examples of transparent governance, "
+                  "noting their consistent on-time reporting and detailed "
+                  "annual financial statements. Sector experts said the "
+                  "palliative care charity category has one of the strongest "
+                  "governance cultures due to the sensitivity of the work "
+                  "and high level of donor scrutiny."},
+     ]},
+    {"entity_type": "Registered NGO",
+     "articles": [
+         {"headline": "Bushfire recovery charity distributes $4.2M to affected families",
+          "source": "Australian Red Cross",
+          "body": "A bushfire recovery charity completed distribution of "
+                  "$4.2 million to families affected by recent bushfire "
+                  "seasons, with over 2,800 families receiving direct "
+                  "financial assistance. Funds were raised from 11,000 "
+                  "individual donors and corporate partners. The organisation's "
+                  "ACNC registration is current and accounts are independently "
+                  "audited."},
+         {"headline": "Disaster charity sector under public scrutiny after complaints",
+          "source": "ABC News",
+          "body": "Several disaster relief charities received public criticism "
+                  "over the pace of fund distribution following major natural "
+                  "disasters. The ACNC said it had received complaints from "
+                  "donors and had written to a number of organisations "
+                  "requesting information about fund deployment timelines. "
+                  "The regulator stressed that inquiries were not findings "
+                  "of wrongdoing."},
+     ]},
 ]
 
 # ── Group C2: FP Payroll — mixed signals (alibi + ambiguous noise) ──
@@ -738,6 +1540,366 @@ PAYROLL_KB: list[dict] = [
                   "program is part of broader digital economy compliance "
                   "initiatives. Platforms with correct ABN verification and "
                   "reporting processes are expected to be unaffected."},
+     ]},
+    # ── entries 5–22 added for expanded dataset ──
+    {"entity_type": "Accounting Firm Pty Ltd",
+     "articles": [
+         {"headline": "Accounting firm pays 180 contractor accountants via fortnightly cycle",
+          "source": "Business Wire",
+          "body": "A mid-tier accounting firm disclosed that it processes "
+                  "fortnightly payroll for 180 contractor accountants across "
+                  "its Sydney, Melbourne, and Brisbane offices. The firm uses "
+                  "a licensed payroll provider and files BAS quarterly with "
+                  "the ATO. Its annual accounts are audited by an independent "
+                  "Big Four firm."},
+         {"headline": "Fair Work audits accounting sector for sham contracting",
+          "source": "Fair Work Ombudsman",
+          "body": "The Fair Work Ombudsman launched a review of contractor "
+                  "arrangements in the professional services sector, including "
+                  "accounting firms, following complaints about sham contracting. "
+                  "The investigation is sector-wide and does not name specific "
+                  "firms. Firms with documented contractor agreements and "
+                  "correct payroll tax treatment are advised to maintain records."},
+     ]},
+    {"entity_type": "Security Services Pty Ltd",
+     "articles": [
+         {"headline": "Security firm holds licence to deploy 250 guards across NSW",
+          "source": "NSW Police Licensing and Registry",
+          "body": "A licensed security services company operates with a "
+                  "master licence covering 250 trained guards deployed at "
+                  "commercial and retail sites across NSW. The firm processes "
+                  "weekly wages and shift allowances through an integrated "
+                  "workforce management system. Licensing records are current "
+                  "with NSW Police Licensing and Registry."},
+         {"headline": "Security industry wages audit finds widespread underpayment",
+          "source": "Fair Work Ombudsman",
+          "body": "A Fair Work audit of the security industry found that "
+                  "a significant proportion of licensed security firms were "
+                  "underpaying casual and shift workers. The audit targeted "
+                  "firms across multiple states. Licensed firms with current "
+                  "enterprise agreements and transparent time-and-attendance "
+                  "records were found to have lower non-compliance rates."},
+     ]},
+    {"entity_type": "Commercial Cleaning Company",
+     "articles": [
+         {"headline": "Cleaning company secures government building maintenance contract",
+          "source": "Department of Finance",
+          "body": "A commercial cleaning company was awarded a three-year "
+                  "government facilities management contract covering 18 "
+                  "federal office buildings. The company employs 210 cleaning "
+                  "staff paid weekly. It holds a current ATO tax withholding "
+                  "registration and complies with the Cleaning Services Award."},
+         {"headline": "ABF inspects cleaning and facilities businesses for cash payment practices",
+          "source": "ABF Quarterly Report",
+          "body": "The Australian Border Force included cleaning and facilities "
+                  "management businesses in a compliance inspection program "
+                  "targeting cash-intensive labour industries. Inspections "
+                  "focused on worker entitlement records and payroll documentation. "
+                  "Businesses with clear payroll records and award compliance "
+                  "experienced no interruption to operations."},
+     ]},
+    {"entity_type": "Healthcare Staffing Agency",
+     "articles": [
+         {"headline": "Healthcare staffing agency places 300 nurses across Queensland",
+          "source": "HRD Australia",
+          "body": "A specialist healthcare staffing agency reported placing "
+                  "over 300 registered nurses and allied health professionals "
+                  "in Queensland hospitals and aged care facilities over the "
+                  "financial year. The agency processes weekly pay runs and "
+                  "holds a current RCSA membership. All placed staff hold "
+                  "current AHPRA registration."},
+         {"headline": "Nursing agency sector reviewed for worker exploitation practices",
+          "source": "ABC News",
+          "body": "A Four Corners investigation highlighted exploitation of "
+                  "overseas-trained nurses by some staffing agencies, including "
+                  "excessive recruitment fees and wage deductions. The Fair "
+                  "Work Ombudsman said it had received complaints from affected "
+                  "nurses. Licensed agencies with transparent fee structures "
+                  "and compliant payroll processes were identified as part "
+                  "of the solution."},
+     ]},
+    {"entity_type": "Construction Group Pty Ltd",
+     "articles": [
+         {"headline": "Builder employs 120 tradespeople on $40M residential development",
+          "source": "HIA Media Release",
+          "body": "A licensed residential builder commenced a $40 million "
+                  "townhouse development in Sydney's northwest, employing "
+                  "120 tradespeople including carpenters, concreters, and "
+                  "electricians. Fortnightly payroll is processed via an "
+                  "integrated accounting system. The builder holds a current "
+                  "NSW contractor licence and workers compensation insurance."},
+         {"headline": "Construction industry scrutinised for payroll tax avoidance",
+          "source": "Revenue NSW",
+          "body": "Revenue NSW announced an audit program targeting payroll "
+                  "tax avoidance in the construction sector, focusing on "
+                  "labour hire arrangements and related-party payroll "
+                  "splitting. The program follows a previous audit that "
+                  "recovered $28 million in unpaid payroll tax. Builders "
+                  "with documented employment agreements and correct "
+                  "grouping provisions are not expected to be affected."},
+     ]},
+    {"entity_type": "National Retail Chain Pty Ltd",
+     "articles": [
+         {"headline": "Retailer processes weekly wages for 400 casual and part-time staff",
+          "source": "Australian Retailers Association",
+          "body": "A national specialty retailer disclosed that it processes "
+                  "weekly wages for approximately 400 casual and part-time "
+                  "staff across 28 stores. The company uses a major payroll "
+                  "provider and complies with the General Retail Industry "
+                  "Award. Employee records are maintained electronically "
+                  "and available for Fair Work inspection on request."},
+         {"headline": "Retail sector faces continued scrutiny over wage compliance",
+          "source": "Fair Work Ombudsman",
+          "body": "The Fair Work Ombudsman announced it would continue "
+                  "proactive monitoring of the retail sector following "
+                  "previous underpayment recoveries. The ombudsman noted "
+                  "that large retailers with sophisticated payroll systems "
+                  "had improved compliance rates compared to smaller operators. "
+                  "A new anonymous tip-line for retail workers was announced."},
+     ]},
+    {"entity_type": "Transport and Logistics Pty Ltd",
+     "articles": [
+         {"headline": "Freight carrier operates fleet of 80 vehicles with regular driver payroll",
+          "source": "Australian Trucking Association",
+          "body": "A Sydney-based freight carrier operates 80 heavy vehicles "
+                  "with 110 employed drivers paid weekly under a registered "
+                  "enterprise agreement. The carrier holds current heavy "
+                  "vehicle accreditation and processes driver hours through "
+                  "an electronic fatigue management system. ATO payroll tax "
+                  "returns are lodged monthly."},
+         {"headline": "Transport sector investigated for owner-driver sham contracting",
+          "source": "Fair Work Ombudsman",
+          "body": "The Fair Work Ombudsman commenced a national investigation "
+                  "into sham contracting arrangements in the transport sector, "
+                  "targeting businesses that classify employed drivers as "
+                  "independent contractors to avoid entitlement obligations. "
+                  "The investigation is industry-wide. Carriers with registered "
+                  "enterprise agreements and employed driver arrangements "
+                  "were noted as compliant models."},
+     ]},
+    {"entity_type": "IT Consulting Pty Ltd",
+     "articles": [
+         {"headline": "IT consultancy pays 90 specialist contractors on fortnightly cycle",
+          "source": "Australian Computer Society",
+          "body": "A mid-sized IT consulting firm disclosed it processes "
+                  "fortnightly contract payments to 90 specialist IT "
+                  "contractors engaged across government and financial "
+                  "services clients. Payments are processed through a "
+                  "licensed payroll intermediary. The firm is ASIC-registered "
+                  "and holds a current IT services panel contract with a "
+                  "federal agency."},
+         {"headline": "ATO reviews contractor payment arrangements in IT sector",
+          "source": "ATO Media Release",
+          "body": "The ATO issued guidance on the tax treatment of IT "
+                  "contractor payments, including PAYG withholding obligations "
+                  "for businesses engaging contractors without ABNs. The "
+                  "guidance follows an increase in contractor disputes in "
+                  "the sector. IT firms with robust ABN verification processes "
+                  "and documented engagement agreements are well-positioned "
+                  "for compliance."},
+     ]},
+    {"entity_type": "Catering and Hospitality Group",
+     "articles": [
+         {"headline": "Catering company serves 120 daily clients with weekly staff payroll",
+          "source": "Restaurant and Catering Australia",
+          "body": "A commercial catering company operating in corporate and "
+                  "government dining rooms processes weekly payroll for 95 "
+                  "chefs, kitchen hands, and service staff. The company "
+                  "complies with the Hospitality Industry Award and holds "
+                  "a current food safety certification in all operating "
+                  "jurisdictions. BAS is lodged monthly with the ATO."},
+         {"headline": "Hospitality sector wages compliance under ongoing scrutiny",
+          "source": "Fair Work Ombudsman",
+          "body": "The Fair Work Ombudsman released its annual wage compliance "
+                  "data, showing the hospitality sector remained one of the "
+                  "most common sources of underpayment complaints. The "
+                  "ombudsman noted that businesses with integrated payroll "
+                  "systems aligned to current award rates had significantly "
+                  "fewer compliance issues. Sector-wide guidance was published "
+                  "on calculating penalty and overtime rates."},
+     ]},
+    {"entity_type": "Agricultural Labour Hire Pty Ltd",
+     "articles": [
+         {"headline": "Farm labour hire firm places 200 seasonal workers in Riverina",
+          "source": "National Farmers Federation",
+          "body": "A licensed agricultural labour hire firm placed over "
+                  "200 seasonal harvest workers in the NSW Riverina for "
+                  "the current season. Workers are paid weekly under the "
+                  "Horticulture Award and the firm holds a Victorian "
+                  "labour hire licence. The firm's accommodation and "
+                  "transport arrangements were inspected by Fair Work "
+                  "Australia with no adverse findings."},
+         {"headline": "Seasonal farm workers face exploitation risk, Fair Work warns",
+          "source": "Fair Work Ombudsman",
+          "body": "The Fair Work Ombudsman warned that seasonal agricultural "
+                  "workers, particularly visa holders, face heightened "
+                  "exploitation risks from unlicensed labour hire operators. "
+                  "The ombudsman reminded farmers that using unlicensed "
+                  "labour hire firms makes them jointly liable for "
+                  "underpayments. Licensed operators with current state "
+                  "licences were distinguished from unlicensed operators."},
+     ]},
+    {"entity_type": "Call Centre Operations Pty Ltd",
+     "articles": [
+         {"headline": "Outsourcing firm employs 160 call centre agents for financial services",
+          "source": "AACC",
+          "body": "An Australian contact centre outsourcer disclosed it "
+                  "employs 160 full-time call centre agents on behalf of "
+                  "three financial services clients. Staff are paid "
+                  "fortnightly under a registered enterprise agreement "
+                  "with above-award conditions. The firm holds ISO 27001 "
+                  "certification for its client data handling processes."},
+         {"headline": "Contact centre industry reviewed for casualisation practices",
+          "source": "Fair Work Commission",
+          "body": "The Fair Work Commission released a review of casual "
+                  "employment in the contact centre industry, noting that "
+                  "regular casual employees in long-term engagements should "
+                  "be offered conversion to permanent employment. Operators "
+                  "with clear conversion policies and documented casual "
+                  "engagement records were expected to comply without issue. "
+                  "No specific firms were named."},
+     ]},
+    {"entity_type": "Aged Care Provider Pty Ltd",
+     "articles": [
+         {"headline": "Aged care provider pays 280 care workers through weekly payroll",
+          "source": "Aged Care Quality and Safety Commission",
+          "body": "A residential aged care provider operating four facilities "
+                  "processes weekly pay for 280 care workers, including "
+                  "registered nurses, personal care assistants, and allied "
+                  "health staff. Payroll is managed by an external payroll "
+                  "firm. The provider holds current aged care accreditation "
+                  "and publishes consumer outcomes data quarterly."},
+         {"headline": "Aged care workers to receive significant pay rise under new agreement",
+          "source": "Fair Work Commission",
+          "body": "The Fair Work Commission approved a staged pay increase "
+                  "for aged care workers following a government submission "
+                  "supporting wage equity in the sector. Providers were "
+                  "advised to prepare payroll systems for the phased "
+                  "increases. Industry bodies said established providers "
+                  "with compliant payroll infrastructure are well-positioned "
+                  "to implement the changes smoothly."},
+     ]},
+    {"entity_type": "National Law Firm",
+     "articles": [
+         {"headline": "Law firm processes payroll for 200 legal staff including paralegals",
+          "source": "Law Society Journal",
+          "body": "A national law firm disclosed that it processes fortnightly "
+                  "payroll for over 200 legal, paralegal, and administrative "
+                  "staff across three offices. The firm uses a dedicated HR "
+                  "and payroll system and lodges monthly PAYG withholding "
+                  "obligations with the ATO. Annual accounts are signed off "
+                  "by an independent auditor."},
+         {"headline": "Legal sector payroll obligations highlighted in ATO compliance reminder",
+          "source": "ATO Media Release",
+          "body": "The ATO issued a reminder to law firms and professional "
+                  "services practices about single touch payroll reporting "
+                  "obligations. The ATO noted that most firms in the sector "
+                  "have successfully transitioned to digital reporting. "
+                  "Firms that have not yet upgraded legacy payroll systems "
+                  "were encouraged to do so before the compliance period ends."},
+     ]},
+    {"entity_type": "Research Institute",
+     "articles": [
+         {"headline": "University research institute processes stipends for 150 postgraduates",
+          "source": "Australian Research Council",
+          "body": "A university-affiliated research institute processes "
+                  "monthly research stipends for 150 postgraduate and "
+                  "postdoctoral researchers funded by ARC and NHMRC grants. "
+                  "Stipend payments follow ATO guidelines for scholarship "
+                  "tax treatment. The institute's financial management "
+                  "is subject to university governance and annual external "
+                  "audit."},
+         {"headline": "Research sector stipend tax treatment clarified in ATO ruling",
+          "source": "ATO Media Release",
+          "body": "The ATO issued a product ruling clarifying the tax "
+                  "treatment of postgraduate research stipends, confirming "
+                  "that most full-time research stipends remain exempt from "
+                  "income tax. The ruling provides certainty for institutes "
+                  "and researchers. Universities were advised to update "
+                  "payment summaries to reflect the ruling from the "
+                  "next financial year."},
+     ]},
+    {"entity_type": "Hotel Group Pty Ltd",
+     "articles": [
+         {"headline": "Hotel chain employs 320 staff across five properties with weekly payroll",
+          "source": "Tourism Australia",
+          "body": "A hotel group operating five properties in Sydney and "
+                  "the Gold Coast processes weekly payroll for 320 "
+                  "hospitality staff including front office, housekeeping, "
+                  "food and beverage, and maintenance teams. Payroll is "
+                  "integrated with a rostering system and complies with "
+                  "the Hospitality Industry Award. BAS is lodged monthly."},
+         {"headline": "Hotel sector flagged in AML tranche two consultation",
+          "source": "Attorney-General's Department",
+          "body": "The Attorney-General's Department released a consultation "
+                  "paper on extending AML/CTF obligations to additional "
+                  "sectors under Tranche Two reforms. Hotels and accommodation "
+                  "providers were listed among sectors under consideration "
+                  "for enhanced customer due diligence obligations. The "
+                  "paper noted this is a policy review and does not imply "
+                  "current non-compliance by any hotel operator."},
+     ]},
+    {"entity_type": "Film and Television Production",
+     "articles": [
+         {"headline": "Production company pays 85 crew members during six-week shoot",
+          "source": "Screen Australia",
+          "body": "A Screen Australia-supported film production company "
+                  "processed weekly cast and crew payments for 85 individuals "
+                  "during a six-week principal photography period. Payments "
+                  "comply with the MEAA Rates Agreement. The production "
+                  "received a federal location incentive and is subject to "
+                  "Screen Australia's financial reporting requirements."},
+         {"headline": "Film industry payroll compliance reviewed amid production boom",
+          "source": "Fair Work Ombudsman",
+          "body": "The Fair Work Ombudsman issued guidance to the screen "
+                  "production industry following an increase in complaints "
+                  "about above-the-line contractor arrangements and payment "
+                  "delays. The guidance reminded productions receiving "
+                  "government incentives of their obligations under fair "
+                  "work legislation. Compliant productions with executed "
+                  "crew agreements were not expected to face enforcement "
+                  "action."},
+     ]},
+    {"entity_type": "Real Estate Agency Group",
+     "articles": [
+         {"headline": "Property agency pays 95 agents commissions and salaries fortnightly",
+          "source": "REIA",
+          "body": "A national real estate agency group disclosed that it "
+                  "processes fortnightly payroll and commission payments "
+                  "for 95 licensed agents and support staff across 12 "
+                  "offices. Agents are employed under individual employment "
+                  "agreements with base salary and commission structures. "
+                  "The group complies with ATO single touch payroll "
+                  "reporting requirements."},
+         {"headline": "Real estate sector warned on trust account management",
+          "source": "NSW Fair Trading",
+          "body": "NSW Fair Trading issued an annual reminder to licensed "
+                  "real estate agencies about trust account obligations, "
+                  "noting that trust accounts holding deposit and rental "
+                  "funds must be kept strictly separate from operating "
+                  "accounts. Audits of trust accounts are mandatory under "
+                  "the Property and Stock Agents Act. Agencies with clean "
+                  "audit records were recognised as examples of good practice."},
+     ]},
+    {"entity_type": "Childcare Group Pty Ltd",
+     "articles": [
+         {"headline": "Childcare operator processes fortnightly pay for 180 educators",
+          "source": "Early Childhood Australia",
+          "body": "A long-day care and preschool operator processing fortnightly "
+                  "payroll for 180 early childhood educators and support "
+                  "staff across 14 services. Educator wages align with the "
+                  "Children's Services Award and the operator participates "
+                  "in the government's childcare subsidy scheme. Accounts "
+                  "are audited annually."},
+         {"headline": "Childcare sector wages set to rise under review determination",
+          "source": "Fair Work Commission",
+          "body": "The Fair Work Commission's determination to increase "
+                  "wages for early childhood education workers will require "
+                  "childcare operators to update payroll systems. Industry "
+                  "bodies estimated the determination would affect payroll "
+                  "costs across the sector significantly. Operators with "
+                  "modern payroll software were expected to implement "
+                  "the changes with minimal disruption."},
      ]},
 ]
 
@@ -838,6 +2000,382 @@ HIGHROLLER_KB: list[dict] = [
                   "timeliness across the industry. Co-operatives with published "
                   "pricing schedules and timely payment records were noted "
                   "as examples of good practice."},
+     ]},
+    # ── entries 5–22 added for expanded dataset ──
+    {"entity_type": "Private Equity Fund",
+     "articles": [
+         {"headline": "Private equity fund closes $280M raise for infrastructure portfolio",
+          "source": "Australian Financial Review",
+          "body": "A Sydney-based private equity manager closed its latest "
+                  "infrastructure fund at $280 million following commitments "
+                  "from superannuation funds and offshore institutional "
+                  "investors. The fund is registered with ASIC as a managed "
+                  "investment scheme and subject to regular custodian reporting. "
+                  "Annual audited accounts are filed with ASIC."},
+         {"headline": "ASIC reviews private equity fund disclosures amid retail investor growth",
+          "source": "ASIC Media Release",
+          "body": "ASIC announced a review of disclosure practices by private "
+                  "equity funds offering interests to retail investors. The "
+                  "regulator noted that fee disclosure and illiquidity risks "
+                  "require clearer presentation in product disclosure "
+                  "statements. Funds with current AFS licences and compliant "
+                  "disclosures are not expected to face enforcement action."},
+     ]},
+    {"entity_type": "Managed Investment Scheme",
+     "articles": [
+         {"headline": "Property trust distributes $18M to unit holders after asset sale",
+          "source": "Reuters",
+          "body": "An ASX-listed property trust completed the sale of a "
+                  "commercial office tower and distributed $18 million to "
+                  "unit holders. The trust is managed by a licensed responsible "
+                  "entity under an ASIC-registered scheme. Distributions are "
+                  "subject to independent trustee oversight and annual "
+                  "audited accounts."},
+         {"headline": "ASIC examines managed fund liquidity management practices",
+          "source": "ASIC Media Release",
+          "body": "ASIC commenced a review of liquidity management practices "
+                  "at registered managed investment schemes following global "
+                  "market volatility. The review is focused on whether fund "
+                  "liquidity profiles match the redemption rights offered to "
+                  "investors. ASIC said it would write to a sample of schemes "
+                  "and that the review was not triggered by any specific "
+                  "concern."},
+     ]},
+    {"entity_type": "Luxury Vehicle Importer",
+     "articles": [
+         {"headline": "Luxury car importer records best sales year after European brand expansion",
+          "source": "Drive.com.au",
+          "body": "An authorised distributor of European luxury vehicles "
+                  "reported its highest annual sales volume after adding "
+                  "two new brand franchises. The business processes "
+                  "international letters of credit for vehicle imports "
+                  "averaging $180,000 per shipment. Australian Customs "
+                  "records show consistent import volumes over six years. "
+                  "Accounts are filed with ASIC annually."},
+         {"headline": "ATO targets luxury goods importers for GST compliance",
+          "source": "ATO Media Release",
+          "body": "The ATO announced a luxury goods compliance program "
+                  "targeting importers of high-value goods including vehicles, "
+                  "wine, and jewellery. The program uses data matching with "
+                  "Australian Border Force to identify GST non-compliance. "
+                  "Importers with accurate customs declarations and correct "
+                  "ABN registration are advised to maintain documentation."},
+     ]},
+    {"entity_type": "Fine Art Auction House",
+     "articles": [
+         {"headline": "Auction house achieves record $9M sale at Sydney auction",
+          "source": "Sydney Morning Herald",
+          "body": "A leading Australian fine art auction house achieved a "
+                  "record hammer price of $9 million for a major colonial "
+                  "work at its Sydney auction. The house processes buyer's "
+                  "premiums and vendor proceeds typically in the $100,000 "
+                  "to $2 million range per transaction. Sales are conducted "
+                  "under ASIC-compliant terms and settlement is managed "
+                  "through a dedicated trust account."},
+         {"headline": "Art market flagged in AML tranche two reform consultation",
+          "source": "Attorney-General's Department",
+          "body": "A government consultation paper on AML Tranche Two reforms "
+                  "listed high-value art dealers and auction houses as "
+                  "sectors to be brought within the AML/CTF regime. The "
+                  "paper noted international findings that art markets can "
+                  "be vulnerable to high-value asset laundering. The "
+                  "consultation is ongoing and no obligations have yet "
+                  "been imposed on the sector."},
+     ]},
+    {"entity_type": "Private Hospital Group",
+     "articles": [
+         {"headline": "Private hospital group processes $35M in Medicare and insurance claims",
+          "source": "Private Healthcare Australia",
+          "body": "A private hospital group operating three metropolitan "
+                  "facilities processed $35 million in Medicare Benefits "
+                  "Schedule and private health insurance claims over the "
+                  "financial year. Revenue per episode averages $8,000 "
+                  "to $25,000 depending on procedure complexity. "
+                  "Billing is audited annually as required by the Private "
+                  "Health Insurance Act."},
+         {"headline": "Private health insurance auditor flags billing discrepancies across sector",
+          "source": "Private Health Insurance Administration Council",
+          "body": "A sector-wide audit by PHIAC identified billing discrepancies "
+                  "at a small proportion of private hospitals and day surgeries. "
+                  "The audit noted that facilities with integrated billing "
+                  "systems and clinical coding oversight had significantly "
+                  "lower error rates. No specific facility was named in "
+                  "connection with intentional overbilling."},
+     ]},
+    {"entity_type": "Commercial Law Firm",
+     "articles": [
+         {"headline": "Law firm acts on $120M commercial property settlement",
+          "source": "Australian Financial Review",
+          "body": "A national commercial law firm acted for both vendor and "
+                  "financier in a $120 million commercial property settlement "
+                  "in Brisbane's CBD. The firm's trust account received and "
+                  "disbursed settlement funds under strict trust account "
+                  "rules administered by the Queensland Law Society. "
+                  "All trust account transactions are reconciled daily."},
+         {"headline": "Law Society reminds firms of trust account anti-money laundering duties",
+          "source": "Law Society Journal",
+          "body": "The Law Society of NSW issued a reminder to all practitioners "
+                  "about their obligations when receiving large settlement "
+                  "funds into trust accounts, including conducting source-of-funds "
+                  "inquiries for transactions above specified thresholds. "
+                  "The reminder follows an international review of professional "
+                  "enabler risks. The Law Society noted Australian practitioners "
+                  "have clear obligations under the Legal Profession Uniform Law."},
+     ]},
+    {"entity_type": "Wholesale Fish Market",
+     "articles": [
+         {"headline": "Fish market processes $28M in wholesale seafood transactions",
+          "source": "Sydney Fish Market",
+          "body": "A licensed wholesale fish market reported annual throughput "
+                  "of $28 million in seafood transactions, with individual "
+                  "buyer invoices ranging from $5,000 to $80,000 per buyer "
+                  "per auction session. The market operates under a wholesale "
+                  "trading licence and all buyer accounts are registered "
+                  "with verified ABN details. Annual accounts are independently "
+                  "audited."},
+         {"headline": "Seafood industry warned of cash payment risks",
+          "source": "AUSTRAC",
+          "body": "AUSTRAC issued guidance to the wholesale seafood sector "
+                  "about the risks associated with cash payments in the "
+                  "supply chain, particularly from unregistered buyers. "
+                  "The guidance recommended that market operators transition "
+                  "all settlement to bank transfer and maintain payment "
+                  "records for a minimum of seven years. Licensed markets "
+                  "with established buyer registration processes were "
+                  "commended for existing controls."},
+     ]},
+    {"entity_type": "Fuel Distributor Pty Ltd",
+     "articles": [
+         {"headline": "Fuel distributor supplies 40 service stations with weekly deliveries",
+          "source": "Australian Institute of Petroleum",
+          "body": "A licensed petroleum distributor makes weekly bulk fuel "
+                  "deliveries to 40 independent service stations across "
+                  "regional NSW. Individual invoices average $45,000 per "
+                  "delivery. The company holds a current petroleum retail "
+                  "licence and reports excise obligations monthly to the "
+                  "ATO. Annual accounts are audited and available for "
+                  "ATO review on request."},
+         {"headline": "ATO targets petroleum excise fraud in regional fuel supply chain",
+          "source": "ATO Media Release",
+          "body": "The ATO launched a petroleum excise fraud investigation "
+                  "following intelligence about mislabelled fuel products "
+                  "being sold at below-excise prices in regional areas. "
+                  "Licensed distributors with correct excise reporting and "
+                  "clear supply chain documentation are not the focus of "
+                  "the investigation. Distributors were encouraged to report "
+                  "suspected excise fraud."},
+     ]},
+    {"entity_type": "Luxury Hotel Group",
+     "articles": [
+         {"headline": "Five-star hotel group reports $22M revenue in peak season",
+          "source": "Tourism Australia",
+          "body": "A luxury hotel group operating two five-star properties "
+                  "in Sydney and Melbourne reported $22 million in revenue "
+                  "during peak tourist season. Average revenue per room "
+                  "per night exceeded $900. Guest payments are settled "
+                  "via credit card, corporate account, or advance wire "
+                  "transfer. The properties hold current AAA Five Diamond "
+                  "accreditation."},
+         {"headline": "Hotel sector included in AML Tranche Two consultation paper",
+          "source": "Attorney-General's Department",
+          "body": "The federal government's AML Tranche Two consultation "
+                  "paper included luxury hotels as a sector to be examined "
+                  "for potential inclusion in the AML/CTF regime, citing "
+                  "international typologies involving high-value cash payments "
+                  "and anonymous third-party bookings. The paper noted "
+                  "Australian hotels have voluntary codes of practice and "
+                  "that the consultation is not directed at any specific "
+                  "operator."},
+     ]},
+    {"entity_type": "Film Production Company",
+     "articles": [
+         {"headline": "Production company receives $18M Screen Australia incentive",
+          "source": "Screen Australia",
+          "body": "A major Australian film production company received an "
+                  "$18 million location incentive from Screen Australia for "
+                  "an internationally co-produced feature film. The production "
+                  "budget totals $75 million, with Australian expenditure "
+                  "qualifying under the producer offset scheme. All financial "
+                  "arrangements are subject to Screen Australia's audit "
+                  "requirements."},
+         {"headline": "Film incentive compliance audits find few irregularities",
+          "source": "Screen Australia",
+          "body": "Screen Australia's annual compliance review of the producer "
+                  "offset and location incentive programs found that the "
+                  "majority of productions met all expenditure and content "
+                  "requirements. Minor errors in expenditure reporting were "
+                  "corrected by affected productions. Screen Australia noted "
+                  "that established production companies with experienced "
+                  "legal and accounting advisers had the highest compliance rates."},
+     ]},
+    {"entity_type": "Commercial Printing Group",
+     "articles": [
+         {"headline": "Print group processes $15M in annual government tender contracts",
+          "source": "Australian Printing Industries Association",
+          "body": "A commercial printing and publishing group disclosed "
+                  "$15 million in annual revenue from government and "
+                  "financial services printing contracts. Individual "
+                  "contracts range from $50,000 to $2 million. The "
+                  "company holds a current government printing panel "
+                  "contract and is subject to annual supplier compliance "
+                  "reviews by its government clients."},
+         {"headline": "Print and publishing sector included in ICT procurement review",
+          "source": "Department of Finance",
+          "body": "A government review of ICT and print procurement practices "
+                  "identified opportunities for greater supplier diversity "
+                  "and improved contract management. The review recommended "
+                  "mandatory financial health checks for suppliers on "
+                  "high-value contracts. No current contract holders were "
+                  "identified as having compliance issues."},
+     ]},
+    {"entity_type": "Aviation Charter Services",
+     "articles": [
+         {"headline": "Charter airline completes 200 charter flights with high-net-worth clients",
+          "source": "BITRE Aviation Statistics",
+          "body": "A licensed Australian charter airline reported completing "
+                  "200 charter flights for corporate and high-net-worth "
+                  "clients over the financial year, with revenue per "
+                  "charter averaging $40,000. The operator holds a current "
+                  "Air Operator Certificate issued by CASA. Client payments "
+                  "are settled by bank transfer with advance payment "
+                  "required for all charter bookings."},
+         {"headline": "CASA conducts routine safety and compliance audits of charter operators",
+          "source": "CASA Media Release",
+          "body": "The Civil Aviation Safety Authority conducted its regular "
+                  "cycle of safety and compliance audits across charter "
+                  "aviation operators. CASA noted that the sector has "
+                  "maintained strong safety records and that the majority "
+                  "of operators have current certification. Operators "
+                  "with documented maintenance records and up-to-date "
+                  "crew licensing were fully compliant."},
+     ]},
+    {"entity_type": "Infrastructure Developer",
+     "articles": [
+         {"headline": "Infrastructure developer completes $60M water treatment contract",
+          "source": "Department of Infrastructure",
+          "body": "An infrastructure construction company completed a "
+                  "$60 million water treatment plant upgrade under a "
+                  "government contract. The developer received milestone "
+                  "payments of $5 million to $18 million per phase. "
+                  "All payment claims were independently certified by "
+                  "a superintendant. The company holds a current builder's "
+                  "licence and complies with project security of payment "
+                  "legislation."},
+         {"headline": "Infrastructure sector scrutinised for subcontractor payment practices",
+          "source": "Building and Construction Commission",
+          "body": "The Australian Building and Construction Commission "
+                  "released a report on security of payment practices "
+                  "in the infrastructure sector, noting ongoing delays "
+                  "in cascading payment to subcontractors and suppliers. "
+                  "The commission recommended contractual improvements "
+                  "but did not identify specific non-compliant head contractors "
+                  "in the report."},
+     ]},
+    {"entity_type": "Pharmaceutical Distributor",
+     "articles": [
+         {"headline": "Pharma distributor supplies 120 pharmacies with monthly settlements",
+          "source": "Pharmacy Guild of Australia",
+          "body": "A licensed pharmaceutical wholesaler supplies prescription "
+                  "and over-the-counter medicines to 120 community pharmacies "
+                  "across Queensland and NSW. Monthly settlement invoices "
+                  "average $180,000 per pharmacy. The distributor holds a "
+                  "current wholesale drug licence and is subject to TGA "
+                  "compliance inspections. Annual accounts are independently "
+                  "audited."},
+         {"headline": "TGA inspects pharmaceutical wholesalers for cold-chain compliance",
+          "source": "TGA Media Release",
+          "body": "The Therapeutic Goods Administration conducted routine "
+                  "inspections of pharmaceutical wholesalers to verify "
+                  "cold-chain storage and distribution practices. TGA "
+                  "noted that the majority of inspected facilities met "
+                  "all requirements. Distributors with documented "
+                  "temperature monitoring and trained staff had the "
+                  "highest compliance ratings."},
+     ]},
+    {"entity_type": "Freight Forwarder Pty Ltd",
+     "articles": [
+         {"headline": "Freight forwarder handles $40M in annual trade finance settlements",
+          "source": "Australian Federation of International Forwarders",
+          "body": "A licensed customs broker and freight forwarder settled "
+                  "$40 million in trade finance transactions for import "
+                  "and export clients over the past financial year. "
+                  "Individual settlement amounts range from $20,000 to "
+                  "$500,000 per shipment. The forwarder holds a current "
+                  "customs broker licence and ABF trader account in "
+                  "good standing."},
+         {"headline": "ABF targets freight forwarders in trade document fraud crackdown",
+          "source": "ABF Media Release",
+          "body": "The Australian Border Force announced targeted inspections "
+                  "of freight forwarders suspected of facilitating "
+                  "fraudulent customs declarations. The operation targets "
+                  "brokers with inconsistent declared values relative to "
+                  "market prices. Licensed brokers with consistent "
+                  "documentation and long-standing ABF trader accounts "
+                  "are not the focus of the operation."},
+     ]},
+    {"entity_type": "Superannuation Fund",
+     "articles": [
+         {"headline": "Industry super fund processes $2.1B in annual member contributions",
+          "source": "APRA",
+          "body": "An APRA-regulated industry superannuation fund received "
+                  "$2.1 billion in member contributions over the financial "
+                  "year from employer sponsors and personal member contributions. "
+                  "Benefit payments totalled $890 million. The fund is "
+                  "subject to mandatory APRA prudential audits and "
+                  "publishes a Product Disclosure Statement with audited "
+                  "accounts annually."},
+         {"headline": "APRA enhances superannuation fund compliance monitoring",
+          "source": "APRA Media Release",
+          "body": "APRA announced an enhanced monitoring program for "
+                  "superannuation fund trustees, including stress testing "
+                  "of investment governance and member outcomes frameworks. "
+                  "The program is part of APRA's strategic priorities "
+                  "for the superannuation sector. Funds with robust "
+                  "governance frameworks and recent clean audit records "
+                  "are well-positioned for the enhanced oversight."},
+     ]},
+    {"entity_type": "Renewable Energy Developer",
+     "articles": [
+         {"headline": "Solar developer achieves financial close on $180M project",
+          "source": "Clean Energy Finance Corporation",
+          "body": "A solar energy developer achieved financial close on "
+                  "a $180 million utility-scale project, supported by "
+                  "a CEFC debt facility and private equity co-investment. "
+                  "Construction payments to contractors will total "
+                  "$130 million over 18 months. The developer holds "
+                  "all relevant state planning approvals and a signed "
+                  "power purchase agreement with a government authority."},
+         {"headline": "ASIC reviews renewable energy investment schemes for disclosure",
+          "source": "ASIC Media Release",
+          "body": "ASIC reminded operators of renewable energy investment "
+                  "schemes about their prospectus and continuous disclosure "
+                  "obligations, following a surge in retail investor interest "
+                  "in green energy assets. The regulator noted that most "
+                  "established developers with AFS licences have appropriate "
+                  "disclosure frameworks. ASIC is monitoring emerging "
+                  "unlicensed operators in the sector."},
+     ]},
+    {"entity_type": "International Shipping Agent",
+     "articles": [
+         {"headline": "Shipping agent handles $25M in annual freight receipts and disbursements",
+          "source": "Shipping Australia",
+          "body": "An accredited shipping agent processes freight receipts "
+                  "and port disbursements totalling $25 million annually "
+                  "on behalf of international vessel owners. Individual "
+                  "disbursements for port charges, stevedoring, and "
+                  "customs fees range from $50,000 to $800,000 per vessel "
+                  "call. The agency is accredited with the Association "
+                  "of Shipping Agents and maintains segregated client funds."},
+         {"headline": "Shipping agency sector flagged for beneficial ownership transparency",
+          "source": "AUSTRAC",
+          "body": "AUSTRAC published a typology paper on money laundering "
+                  "risks in the shipping and maritime sectors, noting that "
+                  "complex beneficial ownership structures of vessel-owning "
+                  "entities can obscure the origins of freight payments. "
+                  "The paper recommended that shipping agents apply "
+                  "enhanced due diligence to new vessel owners from "
+                  "high-risk jurisdictions. It noted this is a sector-wide "
+                  "risk advisory, not a finding against any specific agent."},
      ]},
 ]
 
@@ -944,6 +2482,381 @@ STRUCTURER_KB: list[dict] = [
                   "consistent documentation and long-standing banking "
                   "relationships would experience minimal disruption. "
                   "The program targets anomalous invoice patterns."},
+     ]},
+    # ── entries 5–22 added for expanded dataset ──
+    {"entity_type": "Beauty Clinic",
+     "articles": [
+         {"headline": "Cosmetic clinic charges $1,200 to $3,500 per treatment session",
+          "source": "Australian Society of Plastic Surgeons",
+          "body": "A registered cosmetic clinic discloses its fee schedule "
+                  "ranges from $1,200 for injectable treatments to $3,500 "
+                  "for laser procedures. The clinic accepts card and bank "
+                  "transfer payments and maintains a paper receipt system "
+                  "for all transactions. It is accredited by the Australian "
+                  "Council on Healthcare Standards."},
+         {"headline": "ATO compliance blitz targets cosmetic and beauty sector",
+          "source": "ATO Media Release",
+          "body": "The ATO launched a data-matching program targeting "
+                  "cosmetic and beauty clinics to identify cash income "
+                  "not reported in tax returns. The program compares "
+                  "advertised pricing and appointment volumes against "
+                  "bank deposits. Clinics with accurate records and "
+                  "complete BAS lodgements are expected to be unaffected."},
+     ]},
+    {"entity_type": "Tattoo Studio",
+     "articles": [
+         {"headline": "Custom tattoo studio charges $1,100 to $4,000 per large piece",
+          "source": "Local Gazette",
+          "body": "A well-regarded custom tattoo studio in inner-city Sydney "
+                  "discloses hourly rates of $250 with most large custom "
+                  "pieces requiring multiple sessions totalling $1,100 "
+                  "to $4,000 each. The studio requires deposits upon "
+                  "booking and issues detailed receipts for all transactions. "
+                  "The owner has held a council skin penetration licence "
+                  "for 12 years."},
+         {"headline": "Tattooing and piercing businesses targeted in ATO cash economy review",
+          "source": "ATO Media Release",
+          "body": "The ATO included tattooing and body modification businesses "
+                  "in its annual cash economy compliance program, noting "
+                  "that high-value, often cash transactions in the sector "
+                  "create income-reporting risk. Businesses with documented "
+                  "appointment records and electronic payment systems were "
+                  "found to have lower discrepancy rates. Operators were "
+                  "encouraged to switch to card-only payments."},
+     ]},
+    {"entity_type": "Veterinary Specialist Clinic",
+     "articles": [
+         {"headline": "Veterinary specialist clinic averages $1,800 per surgical referral",
+          "source": "Australian Veterinary Association",
+          "body": "A specialist veterinary referral clinic reports average "
+                  "surgical procedure fees of $1,800 for orthopaedic cases "
+                  "rising to $5,000 for complex oncology procedures. The "
+                  "clinic is registered with the Veterinary Practitioners "
+                  "Board and employs three specialist vets. All revenue "
+                  "is receipted and GST collected."},
+         {"headline": "Veterinary sector faces Medicare-style billing review",
+          "source": "Australian Veterinary Journal",
+          "body": "The AVA flagged concerns that growing pet insurance claims "
+                  "may inadvertently create incentive for fee inflation "
+                  "at specialist clinics, and called for a review of "
+                  "industry fee benchmarking. The review is a policy "
+                  "discussion and no specific clinic has been identified "
+                  "as overcharging."},
+     ]},
+    {"entity_type": "Private Parking Station",
+     "articles": [
+         {"headline": "CBD parking station reports average daily revenue of $9,000",
+          "source": "Parking Australia",
+          "body": "A privately operated CBD parking station discloses daily "
+                  "cash and card revenue averaging $9,000 from 300 to 400 "
+                  "vehicle entries. The operator uses an automated ticketing "
+                  "system and deposits cash takings at a branch daily. "
+                  "Accounts are audited annually under the operator's "
+                  "franchise agreement. AUSTRAC compliance reporting "
+                  "is not required for parking operators."},
+         {"headline": "ATO data-matches parking operators in cash economy review",
+          "source": "ATO Media Release",
+          "body": "The ATO's cash economy taskforce included parking station "
+                  "operators in its national data-matching program, comparing "
+                  "ticketing system records against declared income. The "
+                  "ATO noted that operators using modern automated systems "
+                  "had verifiable revenue trails and were not a compliance "
+                  "concern. Manual ticket operators were the primary focus."},
+     ]},
+    {"entity_type": "Boutique Hotel",
+     "articles": [
+         {"headline": "Boutique hotel averages $1,400 per night during peak season",
+          "source": "Tourism Australia",
+          "body": "A boutique heritage hotel in Sydney's Rocks precinct "
+                  "reports average room rates of $1,400 per night during "
+                  "peak season, with corporate and international guests "
+                  "settling by credit card or pre-approved corporate account. "
+                  "The hotel holds a current liquor licence and is GST-registered. "
+                  "Accounts are filed with ASIC annually."},
+         {"headline": "Luxury accommodation sector under review for anonymous booking risks",
+          "source": "AUSTRAC",
+          "body": "AUSTRAC issued a typology advisory noting that high-value "
+                  "cash payments and third-party bookings at luxury "
+                  "accommodation pose potential laundering risks. The "
+                  "advisory recommended that hotels apply customer "
+                  "identification for cash payments exceeding $10,000 "
+                  "and record beneficial guest details for third-party "
+                  "corporate bookings. The advisory applies to all operators."},
+     ]},
+    {"entity_type": "Jewellery Market Stall",
+     "articles": [
+         {"headline": "Artisan jeweller generates $8,000 to $15,000 per market weekend",
+          "source": "Markets Australia",
+          "body": "An experienced artisan jeweller operating at premium "
+                  "Sydney weekend markets reports weekend revenue of "
+                  "$8,000 to $15,000 for gold and gemstone pieces priced "
+                  "from $800 to $6,000 each. The jeweller accepts EFTPOS "
+                  "and bank transfer and issues handwritten receipts with "
+                  "a metal hallmark certificate. The business has traded "
+                  "at the same market for eight years."},
+         {"headline": "AUSTRAC reminds jewellery dealers of reporting obligations",
+          "source": "AUSTRAC",
+          "body": "AUSTRAC issued a reminder to jewellery retailers and "
+                  "dealers about cash transaction reporting obligations "
+                  "for sales of $10,000 or more paid in cash. The reminder "
+                  "followed a review of suspicious matter reports in the "
+                  "precious metals and stones sector. Dealers who accept "
+                  "card payments and maintain receipts for all sales "
+                  "were noted as operating within the spirit of the rules."},
+     ]},
+    {"entity_type": "Licensed Electrician",
+     "articles": [
+         {"headline": "Sole-trader electrician invoices $1,200 to $2,500 per residential job",
+          "source": "Master Electricians Australia",
+          "body": "A sole-trader residential electrician operating in Sydney's "
+                  "northern beaches reports average job invoices of $1,200 "
+                  "for switchboard upgrades and $2,500 for full rewires. "
+                  "The individual holds a Class A licence and is registered "
+                  "for GST. Business bank statements show income matching "
+                  "electronic invoices issued via a trades management app."},
+         {"headline": "ATO reviews sole-trader tradespeople for income underreporting",
+          "source": "ATO Media Release",
+          "body": "The ATO's cash economy program targeted sole-trader "
+                  "electricians and plumbers following analysis showing "
+                  "some operators reported significantly less income "
+                  "than their job volumes suggest. Tradespeople who "
+                  "use invoicing software and accept card payments "
+                  "have clear digital audit trails and are not the "
+                  "focus of the program."},
+     ]},
+    {"entity_type": "Personal Training Studio",
+     "articles": [
+         {"headline": "PT studio charges $110 to $150 per session with repeat clients",
+          "source": "Fitness Australia",
+          "body": "A boutique personal training studio in Sydney's eastern "
+                  "suburbs reports average session fees of $110 to $150 "
+                  "with most clients purchasing 10 to 20 session packages. "
+                  "Package payments average $1,400 to $3,000. The studio "
+                  "uses a practice management app for bookings and payment "
+                  "and is GST-registered. All trainer staff hold current "
+                  "Certificate IV in Fitness."},
+         {"headline": "Fitness and personal training businesses included in cash economy audit",
+          "source": "ATO Media Release",
+          "body": "The ATO included gyms and personal training studios "
+                  "in its annual cash economy audit, noting that "
+                  "cash package sales are common in the sector. "
+                  "Businesses with digital booking and payment systems "
+                  "had verifiable revenue records and were not a "
+                  "compliance concern. The ATO encouraged studios "
+                  "to issue tax invoices for all sessions."},
+     ]},
+    {"entity_type": "Swim School",
+     "articles": [
+         {"headline": "Swim school charges $1,100 to $1,400 per annual lesson package",
+          "source": "Swimming Australia",
+          "body": "A licensed swim school operating four pool sites "
+                  "charges annual tuition packages of $1,100 to $1,400 "
+                  "per student, collected by direct debit or bank transfer. "
+                  "The school enrols over 400 students per term and "
+                  "employs 22 instructors. Accounts are filed annually "
+                  "with the ATO and the school holds current public "
+                  "liability insurance."},
+         {"headline": "Swimming lesson providers reminded of ATO single touch payroll",
+          "source": "ATO Media Release",
+          "body": "The ATO reminded swim school operators who employ "
+                  "casual instructors of their obligations under single "
+                  "touch payroll reporting. The reminder followed an audit "
+                  "finding that some small aquatic education businesses "
+                  "had not transitioned to digital payroll reporting. "
+                  "Schools with fewer than five employees were given "
+                  "an extended transition period."},
+     ]},
+    {"entity_type": "Music Tutor",
+     "articles": [
+         {"headline": "Freelance music teacher earns $1,200 to $2,000 per week from private lessons",
+          "source": "Music Council of Australia",
+          "body": "An experienced freelance piano and guitar teacher "
+                  "reports a full client roster of 30 students paying "
+                  "$80 to $100 per 45-minute lesson, with income totalling "
+                  "$1,200 to $2,000 per week. Lessons are invoiced via "
+                  "a music teaching app and payments are received by "
+                  "bank transfer. The teacher holds a current Working "
+                  "with Children Check."},
+         {"headline": "ATO issues guidance for freelance tutors on income reporting",
+          "source": "ATO Media Release",
+          "body": "The ATO published guidance for freelance music, academic, "
+                  "and sporting tutors on their obligations to report "
+                  "all tuition income, including cash payments. The "
+                  "guidance notes that platform-based tutors receive "
+                  "annual payment summaries from platforms, while "
+                  "independent tutors must maintain their own records. "
+                  "Tutors with bank transfer income trails were noted "
+                  "as straightforward to assess."},
+     ]},
+    {"entity_type": "Wedding Photographer",
+     "articles": [
+         {"headline": "Wedding photographer earns $3,500 to $6,000 per event booking",
+          "source": "Australian Institute of Professional Photography",
+          "body": "An experienced wedding photographer reports typical "
+                  "booking fees of $3,500 to $6,000 for full-day coverage "
+                  "including album production. Deposits of 30 percent "
+                  "are collected on booking with balances settled two "
+                  "weeks before the event by bank transfer. Annual "
+                  "revenue is reported through a registered ABN and "
+                  "GST is remitted quarterly."},
+         {"headline": "Creative industry freelancers advised on tax compliance",
+          "source": "ATO Media Release",
+          "body": "The ATO published a guide for creative industry "
+                  "freelancers including photographers, videographers, "
+                  "and graphic designers on correct income reporting, "
+                  "GST obligations, and business expense claims. The "
+                  "guide noted that most freelancers with a registered "
+                  "ABN and bank account as the primary payment method "
+                  "are straightforward to assess for tax compliance."},
+     ]},
+    {"entity_type": "Chartered Accountant Practice",
+     "articles": [
+         {"headline": "Accounting practice invoices $1,500 to $4,500 for individual tax returns",
+          "source": "CPA Australia",
+          "body": "A chartered accountant sole practitioner in Melbourne "
+                  "reports billing individuals $1,500 to $4,500 for "
+                  "complex tax returns involving investments, trusts, "
+                  "and self-managed superannuation funds. The practice "
+                  "uses cloud accounting software and issues e-invoices "
+                  "settled by bank transfer. The practitioner is a "
+                  "registered tax agent with a clean Tax Practitioners "
+                  "Board record."},
+         {"headline": "Tax agent compliance obligations highlighted in TPB review",
+          "source": "Tax Practitioners Board",
+          "body": "The Tax Practitioners Board's annual compliance report "
+                  "noted that registered tax agents have obligations to "
+                  "verify client identity and exercise professional scepticism "
+                  "about the source of funds disclosed in returns. "
+                  "The TPB reminded agents that assisting clients to "
+                  "conceal income or assets may constitute professional "
+                  "misconduct. No specific agents were identified in "
+                  "the report."},
+     ]},
+    {"entity_type": "Specialty Courier Service",
+     "articles": [
+         {"headline": "Specialty courier charges $800 to $2,500 per secure medical delivery",
+          "source": "Australian Logistics Council",
+          "body": "A specialty medical courier service reports delivery "
+                  "fees of $800 to $2,500 per consignment for temperature-controlled "
+                  "pharmaceutical and pathology deliveries. The company "
+                  "contracts with six private hospitals and a state "
+                  "health department. Invoices are issued electronically "
+                  "and settled by direct debit. TGA cold-chain certification "
+                  "is current."},
+         {"headline": "Courier and logistics businesses reviewed for correct GST treatment",
+          "source": "ATO Media Release",
+          "body": "The ATO issued guidance on GST treatment of specialty "
+                  "courier and logistics services, clarifying when medical "
+                  "transport services are GST-free versus taxable. "
+                  "Businesses with correctly structured service agreements "
+                  "and consistent invoicing practices were identified "
+                  "as having appropriate tax positions. The guidance "
+                  "applies to all courier businesses."},
+     ]},
+    {"entity_type": "Commercial Painting Contractor",
+     "articles": [
+         {"headline": "Commercial painter quotes $1,000 to $2,800 per residential repaint",
+          "source": "Master Painters Australia",
+          "body": "A registered commercial painting contractor in Brisbane "
+                  "reports typical domestic repainting quotes of $1,000 "
+                  "to $2,800 for full-house exterior repaints. Commercial "
+                  "contracts range up to $45,000. The contractor employs "
+                  "three apprentices and two journeypeople and complies "
+                  "with the Painting and Decorating Award. All work is "
+                  "invoiced electronically."},
+         {"headline": "ATO targets painting and decorating businesses in cash economy audit",
+          "source": "ATO Media Release",
+          "body": "The ATO included painting contractors in its trades "
+                  "and construction cash economy compliance program, "
+                  "noting that some operators accept cash for residential "
+                  "jobs without issuing invoices. Contractors using "
+                  "electronic quoting and invoicing systems with bank "
+                  "transfer settlement were found to have verifiable "
+                  "income trails. The program focuses on cash-only operators."},
+     ]},
+    {"entity_type": "Landscape Architecture Firm",
+     "articles": [
+         {"headline": "Landscape firm invoices $5,000 to $15,000 per residential design",
+          "source": "Australian Institute of Landscape Architects",
+          "body": "A landscape architecture practice reports design "
+                  "and construction documentation fees of $5,000 to "
+                  "$15,000 for residential projects and $30,000 to "
+                  "$120,000 for commercial streetscape projects. "
+                  "The firm is ASLA-accredited and invoices all work "
+                  "via a project management platform with integrated "
+                  "bank transfer payment. GST is remitted quarterly."},
+         {"headline": "Design professionals reminded of ATO record-keeping obligations",
+          "source": "ATO Media Release",
+          "body": "The ATO reminded architects, engineers, and landscape "
+                  "designers of their record-keeping obligations, noting "
+                  "that professional service businesses must retain "
+                  "job records, invoices, and bank statements for at "
+                  "least five years. The ATO noted that design firms "
+                  "with cloud-based project management systems are "
+                  "well-placed for compliance."},
+     ]},
+    {"entity_type": "Mortgage Broker Practice",
+     "articles": [
+         {"headline": "Mortgage broker processes $12M in client loan settlements monthly",
+          "source": "Mortgage and Finance Association of Australia",
+          "body": "A licensed mortgage broker reports facilitating an "
+                  "average of $12 million in home loan settlements per "
+                  "month across 15 to 20 loan approvals. Trail commissions "
+                  "and upfront fees average $1,200 to $3,500 per loan. "
+                  "The broker holds a current Australian credit licence, "
+                  "is MFAA-accredited, and complies with ASIC's best "
+                  "interest duty obligations."},
+         {"headline": "ASIC reviews mortgage broker commission structures",
+          "source": "ASIC Media Release",
+          "body": "ASIC conducted a review of mortgage broker commission "
+                  "structures following the Banking Royal Commission "
+                  "recommendations. ASIC noted that the new best interest "
+                  "duty and commission caps had improved consumer outcomes "
+                  "in most cases. Brokers with documented client needs "
+                  "assessments and disclosed remuneration structures "
+                  "were found to be substantially compliant."},
+     ]},
+    {"entity_type": "Plumbing Contractor",
+     "articles": [
+         {"headline": "Plumbing contractor invoices $900 to $2,200 per service call",
+          "source": "Master Plumbers Australia",
+          "body": "A licensed plumbing contractor serving residential and "
+                  "commercial clients in Perth reports service call invoices "
+                  "of $900 to $2,200 for emergency and scheduled work. "
+                  "Commercial projects range to $80,000. The contractor "
+                  "holds a current plumbing licence and is registered for "
+                  "GST. All invoices are issued electronically via a "
+                  "field service management app."},
+         {"headline": "Plumbing and gas fitting businesses included in ATO cash economy audit",
+          "source": "ATO Media Release",
+          "body": "The ATO included plumbing, gas fitting, and drainage "
+                  "contractors in its trades sector cash economy program. "
+                  "The ATO noted that sole traders in the plumbing sector "
+                  "sometimes accept cash without issuing invoices, creating "
+                  "income-reporting gaps. Contractors with electronic "
+                  "job management systems and bank-transfer payment "
+                  "records were not identified as compliance risks."},
+     ]},
+    {"entity_type": "Compounding Pharmacy",
+     "articles": [
+         {"headline": "Compounding pharmacy charges $1,100 to $3,200 per custom formulation",
+          "source": "Pharmaceutical Society of Australia",
+          "body": "A TGA-licensed compounding pharmacy reports that custom "
+                  "pharmaceutical formulations average $1,100 for topical "
+                  "compounds and $3,200 for complex sterile preparations. "
+                  "All formulations are prepared to prescription and "
+                  "dispensed under pharmacist supervision. The pharmacy "
+                  "holds a current TGA manufacturing licence and PSA "
+                  "accreditation."},
+         {"headline": "TGA inspects compounding pharmacies for quality and compliance",
+          "source": "TGA Media Release",
+          "body": "The TGA conducted a national inspection program of "
+                  "compounding pharmacies to assess compliance with "
+                  "Good Manufacturing Practice guidelines. Inspections "
+                  "found that most pharmacies with current manufacturing "
+                  "licences maintained adequate quality systems. Pharmacies "
+                  "with documented batch records and trained compounding "
+                  "staff had the highest compliance ratings."},
      ]},
 ]
 
@@ -1087,6 +3000,350 @@ SLEEPER_KB: list[dict] = [
                   "'clean' financial identity while operating the fraud "
                   "through offshore structures. Australian authorities have "
                   "been asked to locate and provisionally arrest the subject."},
+     ]},
+    # ── entries 7–21 added for expanded dataset ──
+    {"entity_type": "Individual",
+     "articles": [
+         {"headline": "IT contractor settles in Brisbane after decade working in mining sector",
+          "source": "Local Gazette",
+          "body": "A technology contractor relocated to Brisbane after "
+                  "a decade working fly-in-fly-out roles in the Pilbara. "
+                  "Colleagues describe the individual as technically skilled "
+                  "and diligent, with a reputation for delivering projects "
+                  "on time. The individual lives quietly in a suburban home "
+                  "and appears financially comfortable from contracting income."},
+         {"headline": "AFP cybercrime unit identifies Australian resident as ransomware financier",
+          "source": "AFP Media Release",
+          "body": "The AFP's Joint Policing Cybercrime Coordination Centre "
+                  "identified a Brisbane-based individual as a financial "
+                  "facilitator for an Eastern European ransomware group. "
+                  "The individual is alleged to have converted ransom "
+                  "proceeds from cryptocurrency to fiat using Australian "
+                  "bank accounts, with individual transactions kept "
+                  "deliberately small to avoid automated detection. "
+                  "The account's volume is consistent with normal "
+                  "contracting income. Cybercrime investigators assessed "
+                  "the account as a critical laundering node."},
+     ]},
+    {"entity_type": "Individual",
+     "articles": [
+         {"headline": "Perth mechanic runs popular community car maintenance workshop",
+          "source": "Community News",
+          "body": "A Perth auto mechanic runs a free weekend workshop "
+                  "teaching basic car maintenance to young people in "
+                  "the local community. The individual is described as "
+                  "generous with their time and skills, and is well "
+                  "regarded by the neighbourhood. Bank records show "
+                  "modest income consistent with employment at a "
+                  "local workshop."},
+         {"headline": "DEA collaboration identifies Australian drug distribution network",
+          "source": "AFP Media Release",
+          "body": "A joint AFP and US Drug Enforcement Administration "
+                  "operation identified an Australian resident as "
+                  "a financial controller for a transnational synthetic "
+                  "drug importation network. Investigators allege the "
+                  "individual maintained multiple bank accounts receiving "
+                  "small deposits from drug purchasers, with the aggregate "
+                  "laundering volume substantially higher than the "
+                  "individual transaction amounts suggest. "
+                  "A domestic arrest warrant has been issued."},
+     ]},
+    {"entity_type": "Individual",
+     "articles": [
+         {"headline": "Community volunteer recognised for youth mentoring work",
+          "source": "Local Council Newsletter",
+          "body": "A local resident was recognised at a council volunteer "
+                  "appreciation event for sustained commitment to a youth "
+                  "mentoring program. The individual has volunteered "
+                  "weekly for four years, helping at-risk teenagers "
+                  "build skills for employment. Participants in the "
+                  "program speak highly of the mentor's patience and "
+                  "dedication."},
+         {"headline": "AFP intelligence brief identifies human trafficking facilitator",
+          "source": "AFP (Operation Okesi)",
+          "body": "An AFP intelligence assessment shared with financial "
+                  "institutions identified an individual as a suspected "
+                  "facilitator in a domestic human trafficking network. "
+                  "The individual allegedly used personal bank accounts "
+                  "to receive proceeds from the exploitation of "
+                  "foreign nationals. Transactions appeared consistent "
+                  "with legitimate income, but pattern analysis identified "
+                  "regular receipts corresponding to trafficking cycles. "
+                  "The AFP declined to name the individual publicly "
+                  "pending further investigation."},
+     ]},
+    {"entity_type": "Individual",
+     "articles": [
+         {"headline": "Retiree takes up pottery and community gardening in coastal NSW",
+          "source": "Regional Times",
+          "body": "A recently retired civil servant has embraced a quieter "
+                  "lifestyle in coastal NSW, joining a pottery group and "
+                  "helping tend a community vegetable garden. Former "
+                  "colleagues recall the individual as diligent and "
+                  "principled throughout their public service career. "
+                  "Neighbours describe the retiree as private but friendly."},
+         {"headline": "DFAT sanctions investigation names retired official for sanctions evasion",
+          "source": "DFAT Media Release",
+          "body": "The Department of Foreign Affairs and Trade is "
+                  "investigating a former mid-level public servant "
+                  "for alleged sanctions evasion, after intelligence "
+                  "indicated the individual maintained undisclosed "
+                  "financial relationships with a designated entity "
+                  "during their government service and subsequently. "
+                  "Investigators allege the individual used personal "
+                  "accounts to channel payments to sanctioned parties "
+                  "in amounts deliberately kept below reporting thresholds. "
+                  "The individual has not been publicly named."},
+     ]},
+    {"entity_type": "Individual",
+     "articles": [
+         {"headline": "Local councillor praised for advocacy on infrastructure investment",
+          "source": "Local Gazette",
+          "body": "A local government councillor was praised by constituents "
+                  "for successfully lobbying state government for a road "
+                  "upgrade in an underserviced suburb. The councillor is "
+                  "regarded as hardworking and accessible, regularly "
+                  "attending community events. Financial disclosures "
+                  "filed with the council show no unusual interests."},
+         {"headline": "ICAC investigation identifies councillor in corrupt payments scheme",
+          "source": "NSW ICAC",
+          "body": "The NSW Independent Commission Against Corruption "
+                  "identified a local government councillor as a participant "
+                  "in a developer-corruption scheme. The councillor is "
+                  "alleged to have received payments through a personal "
+                  "bank account in exchange for supporting development "
+                  "applications. Payments were structured as small "
+                  "transfers from multiple sources to avoid detection. "
+                  "ICAC has commenced a formal investigation."},
+     ]},
+    {"entity_type": "Individual",
+     "articles": [
+         {"headline": "Electronics technician wins state skills competition",
+          "source": "TAFE NSW",
+          "body": "A TAFE-trained electronics technician won a state-level "
+                  "skills competition for telecommunications repair. "
+                  "The individual works for a licensed telecommunications "
+                  "contractor and is completing an advanced diploma "
+                  "in electrical engineering. Instructors praised "
+                  "the student's technical ability and work ethic."},
+         {"headline": "ASIO alert identifies electronics specialist in espionage investigation",
+          "source": "ASIO Annual Threat Assessment",
+          "body": "ASIO's annual threat assessment noted that foreign "
+                  "intelligence services have recruited Australian "
+                  "electronics and telecommunications specialists with "
+                  "access to sensitive infrastructure. In one identified "
+                  "case, a specialist is alleged to have received "
+                  "payments from an offshore controller through "
+                  "a series of small personal account transfers "
+                  "disguised as consulting fees. The AFP is "
+                  "investigating and has not publicly named the individual."},
+     ]},
+    {"entity_type": "Individual",
+     "articles": [
+         {"headline": "Café owner brings flavours of Lebanon to local suburb",
+          "source": "Local Gazette",
+          "body": "A Lebanese-Australian café owner has introduced "
+                  "traditional Middle Eastern food to a western Sydney "
+                  "suburb. The café is popular with the local community "
+                  "and has received positive coverage in a regional food "
+                  "blog. The owner is described as hospitable and "
+                  "community-minded."},
+         {"headline": "AFP operation links small business owner to darknet drug market",
+          "source": "AFP Media Release",
+          "body": "The AFP's Dark Web and Cybercrime Unit identified "
+                  "a Sydney small business owner as a distributor for "
+                  "a darknet drug marketplace. Investigators allege the "
+                  "individual used their personal account to receive "
+                  "cryptocurrency-converted payments from drug sales, "
+                  "with fiat deposits structured to appear as business "
+                  "income. Transaction volumes were modest and consistent "
+                  "with a low-turnover café, masking the illicit flows. "
+                  "Police executed a search warrant at the business premises."},
+     ]},
+    {"entity_type": "Individual",
+     "articles": [
+         {"headline": "Environment teacher recognised for sustainability program",
+          "source": "NSW Department of Education",
+          "body": "A secondary school environment teacher was commended "
+                  "at a state sustainability conference for developing "
+                  "a school-wide recycling and conservation program. "
+                  "The teacher has worked at the same school for "
+                  "eight years and coaches the school's debating team. "
+                  "Students and parents describe the individual as "
+                  "principled and conscientious."},
+         {"headline": "Customs identifies teacher in international wildlife trafficking network",
+          "source": "ABF Media Release",
+          "body": "The Australian Border Force, working with CITES "
+                  "enforcement authorities, identified an Australian "
+                  "resident as a participant in an international "
+                  "wildlife trafficking network. The individual is "
+                  "alleged to have used personal bank accounts to "
+                  "receive payments for brokering the sale of "
+                  "protected species to overseas buyers. Payments "
+                  "were consistent in size with regular consumer "
+                  "transactions but occurred at intervals matching "
+                  "known trafficking shipments. An arrest warrant "
+                  "has been issued."},
+     ]},
+    {"entity_type": "Individual",
+     "articles": [
+         {"headline": "Migrant community leader honoured for integration work",
+          "source": "SBS News",
+          "body": "A community leader from a Latin American migrant "
+                  "association was recognised by the Department of "
+                  "Home Affairs for outstanding contribution to "
+                  "migrant integration programs. The individual "
+                  "organises language classes and employment workshops "
+                  "for newly arrived families. Community members "
+                  "describe the leader as selfless and trustworthy."},
+         {"headline": "AFP confirms Australian resident linked to Latin American cartel financing",
+          "source": "AFP Media Release",
+          "body": "The AFP confirmed that an Australian resident is "
+                  "under investigation for providing financial services "
+                  "to a transnational organised crime group with "
+                  "connections to a Latin American drug cartel. "
+                  "Investigators allege the individual received funds "
+                  "from cartel associates and distributed them through "
+                  "a network of personal accounts, keeping individual "
+                  "amounts small enough to avoid automated reporting. "
+                  "The investigation is ongoing."},
+     ]},
+    {"entity_type": "Individual",
+     "articles": [
+         {"headline": "Customer service manager praised for award-winning team performance",
+          "source": "Customer Service Institute of Australia",
+          "body": "A customer service manager at a financial services "
+                  "call centre received a team performance award from "
+                  "the CSIA. The individual has worked in the sector "
+                  "for nine years and is regarded by colleagues as "
+                  "ethical and customer-focused. The employer noted "
+                  "the individual has a clean internal compliance record."},
+         {"headline": "AFP identifies call centre worker in large-scale identity theft scheme",
+          "source": "AFP Media Release",
+          "body": "The AFP charged an individual employed at a financial "
+                  "services call centre with computer fraud and money "
+                  "laundering after investigators found the individual "
+                  "had been harvesting customer account details and "
+                  "transferring small amounts to a personal account "
+                  "before forwarding funds offshore. The scheme ran "
+                  "for over 18 months and affected hundreds of customers. "
+                  "The individual's own account showed no unusual volume, "
+                  "as funds were quickly moved on."},
+     ]},
+    {"entity_type": "Individual",
+     "articles": [
+         {"headline": "Property investor profiled in first-home buyer success story",
+          "source": "Domain.com.au",
+          "body": "A first-generation migrant who purchased their first "
+                  "home in western Sydney after 10 years of saving was "
+                  "featured in a media profile about the property market. "
+                  "The individual works in logistics and supplements income "
+                  "with shift work. Bank records reflect a modest but "
+                  "consistent savings pattern typical of diligent low-to-middle "
+                  "income earners."},
+         {"headline": "AFP investigation uncovers Ponzi scheme facilitator in Sydney suburb",
+          "source": "AFP Media Release",
+          "body": "The AFP charged a western Sydney resident with "
+                  "facilitating a Ponzi scheme targeting the local migrant "
+                  "community. The individual is alleged to have collected "
+                  "investment contributions through personal bank accounts "
+                  "and forwarded funds to the scheme's operators, earning "
+                  "a commission. Victims reported losing savings of $20,000 "
+                  "to $80,000 each. The individual's account showed "
+                  "regular modest deposits consistent with wage income, "
+                  "masking the scheme's cash flows."},
+     ]},
+    {"entity_type": "Individual",
+     "articles": [
+         {"headline": "Hospitality worker builds reputation at award-winning restaurant",
+          "source": "Good Food Guide",
+          "body": "A sous chef at a well-regarded inner-city restaurant "
+                  "was noted in the Good Food Guide for consistent "
+                  "quality and an approachable service style. The "
+                  "individual has worked at the same establishment "
+                  "for five years and is completing a wine certification "
+                  "course. Colleagues describe the individual as "
+                  "dependable and honest."},
+         {"headline": "ABF seizes counterfeit documents from network involving hospitality worker",
+          "source": "ABF Media Release",
+          "body": "The Australian Border Force seized a large quantity "
+                  "of counterfeit identity documents and work visas "
+                  "following a raid connected to a hospitality sector "
+                  "worker. The individual is alleged to have used "
+                  "personal bank accounts to receive payments for "
+                  "arranging fraudulent documentation for overseas workers "
+                  "seeking illegal employment. Amounts deposited were "
+                  "individually small but investigators traced cumulative "
+                  "proceeds of over $400,000 through the account."},
+     ]},
+    {"entity_type": "Individual",
+     "articles": [
+         {"headline": "Retail worker promoted to store manager after customer excellence",
+          "source": "Australian Retailers Association",
+          "body": "A retail employee was promoted to store manager "
+                  "at a national clothing chain after receiving multiple "
+                  "customer service commendations. The individual has "
+                  "worked in retail for seven years and recently "
+                  "completed a diploma in retail management. Colleagues "
+                  "describe the individual as reliable and customer-focused."},
+         {"headline": "Police allege retail worker used account to receive stolen vehicle proceeds",
+          "source": "NSW Police Media",
+          "body": "NSW Police allege that a retail worker's personal "
+                  "bank account was used to receive and distribute "
+                  "payments from an organised vehicle theft ring. "
+                  "Investigators allege the individual received small "
+                  "deposits from ring members and forwarded aggregated "
+                  "amounts to a senior organiser. The account's "
+                  "transactions appeared consistent with retail employment "
+                  "income. The individual was arrested following "
+                  "a joint taskforce investigation."},
+     ]},
+    {"entity_type": "Individual",
+     "articles": [
+         {"headline": "Gym instructor featured in local fitness challenge campaign",
+          "source": "Local Gazette",
+          "body": "A personal trainer and gym instructor participated "
+                  "in a local council fitness challenge, inspiring over "
+                  "200 community members to take up regular exercise. "
+                  "The individual is described by participants as "
+                  "motivating and supportive. The trainer runs legitimate "
+                  "group fitness sessions at the local leisure centre."},
+         {"headline": "ASIC investigation names fitness industry operator in investment scam",
+          "source": "ASIC Media Release",
+          "body": "ASIC commenced proceedings against a fitness industry "
+                  "operator for running an unlicensed investment scheme "
+                  "promoted through social media to followers and fitness "
+                  "clients. Investors were promised high returns on "
+                  "'exclusive' trading programs. Investigators found "
+                  "that client funds were deposited into the operator's "
+                  "personal bank account and used for personal expenditure "
+                  "rather than investment. Losses across affected investors "
+                  "are estimated at $1.8 million."},
+     ]},
+    {"entity_type": "Individual",
+     "articles": [
+         {"headline": "Community radio host builds loyal listenership with weekend shows",
+          "source": "Community Broadcasting Association",
+          "body": "A community radio presenter has hosted a weekend "
+                  "music and community news program for six years, "
+                  "building a loyal listener base across a regional "
+                  "city. The individual is known locally for interviewing "
+                  "small business owners and community leaders. "
+                  "Friends describe the presenter as outgoing and "
+                  "generous with their time."},
+         {"headline": "AFP and ACCC warn of advance fee fraud orchestrated through community media",
+          "source": "AFP Media Release",
+          "body": "A joint AFP and ACCC investigation identified a "
+                  "community media personality as the alleged organiser "
+                  "of an advance fee fraud targeting elderly and "
+                  "isolated Australians. Victims were contacted through "
+                  "the individual's community connections and persuaded "
+                  "to transfer funds to receive supposed inheritances "
+                  "or prizes. The individual collected victim payments "
+                  "through a personal bank account in amounts of "
+                  "$500 to $5,000 per victim, with the account's total "
+                  "volume appearing consistent with modest media income. "
+                  "Total traced proceeds exceeded $620,000."},
      ]},
 ]
 
@@ -1239,6 +3496,361 @@ SMURF_KB: list[dict] = [
                   "$180,000. The judge noted that the student was aware "
                   "the funds were not legitimate and had received payment "
                   "for the use of the account."},
+     ]},
+    # ── entries 7–21 added for expanded dataset ──
+    {"entity_type": "Hospitality Worker",
+     "articles": [
+         {"headline": "Barista wins regional coffee championship at local café competition",
+          "source": "Specialty Coffee Association AU",
+          "body": "A barista working at an inner-city specialty coffee "
+                  "shop won the regional barista championship, showcasing "
+                  "latte art and espresso technique. The individual works "
+                  "casual shifts and supplements income with occasional "
+                  "weekend event catering. Colleagues describe the barista "
+                  "as enthusiastic and committed to the craft."},
+         {"headline": "Police warn hospitality workers about money-mule recruitment",
+          "source": "NSW Police Media",
+          "body": "NSW Police issued a warning targeting hospitality and "
+                  "retail workers after identifying a spike in money-mule "
+                  "recruitment through staff-room social media groups. "
+                  "A recently investigated network involved café and "
+                  "restaurant workers whose accounts received multiple "
+                  "small deposits daily that appeared consistent with "
+                  "casual wage payments. Investigators identified one "
+                  "account that received over $95,000 in a single month "
+                  "from dozens of separate senders, all forwarded to "
+                  "a single overseas account the following day."},
+     ]},
+    {"entity_type": "Gig Worker",
+     "articles": [
+         {"headline": "Backpacker finds sustainable income through farm and city gig work",
+          "source": "Working Holiday Australia",
+          "body": "A working holiday visa holder from the UK described "
+                  "a varied year combining regional farm work with "
+                  "city-based gig economy jobs to fund their travel. "
+                  "The individual receives small payments from multiple "
+                  "platforms, which they say is typical for backpackers "
+                  "managing living costs in Australia."},
+         {"headline": "AUSTRAC flags working holiday visa accounts in mule network analysis",
+          "source": "AUSTRAC",
+          "body": "An AUSTRAC financial intelligence analysis identified "
+                  "working holiday visa holders as a segment being "
+                  "deliberately recruited by mule network operators. "
+                  "Operators exploit the temporary nature of the visa "
+                  "and frequent platform income patterns to conceal "
+                  "illicit deposits. One identified case involved an "
+                  "account receiving over 60 deposits from unrelated "
+                  "sources in a single month, with the pattern "
+                  "obscured by legitimate gig platform credits. "
+                  "The visa holder was unaware the account was being used."},
+     ]},
+    {"entity_type": "Graduate",
+     "articles": [
+         {"headline": "Accounting graduate secures first role at Big Four firm",
+          "source": "CPA Australia",
+          "body": "A recent commerce graduate received an offer from "
+                  "a Big Four accounting firm following a competitive "
+                  "graduate recruitment round. Friends and family "
+                  "celebrated the achievement on social media. The "
+                  "individual is described as diligent and academically "
+                  "strong, having completed an internship during "
+                  "their penultimate year."},
+         {"headline": "AFP charges graduate accountant in tax fraud mule network",
+          "source": "AFP Media Release",
+          "body": "The AFP charged a recently graduated accountant "
+                  "with dealing in proceeds of crime after investigators "
+                  "found the individual's personal account had been "
+                  "used to receive funds from a tax fraud syndicate "
+                  "and immediately redistribute them. The individual "
+                  "was recruited through a university LinkedIn group "
+                  "with an offer of paid 'bookkeeping' work. The "
+                  "account received deposits from over 30 sources "
+                  "within a two-month period, each individually "
+                  "small enough to avoid automated bank alerts."},
+     ]},
+    {"entity_type": "Individual",
+     "articles": [
+         {"headline": "Pensioner volunteers at local council aged care services",
+          "source": "Community News",
+          "body": "A retired factory worker receives the age pension "
+                  "and supplements it with modest term deposit interest. "
+                  "The individual volunteers twice a week at a council "
+                  "day centre and is well known to staff and fellow "
+                  "volunteers. Bank records reflect a consistent "
+                  "pattern of pension credits and small interest payments."},
+         {"headline": "AFP operation identifies aged pensioner as mule network participant",
+          "source": "AFP Media Release",
+          "body": "The AFP identified an aged pensioner as an unwitting "
+                  "participant in a money-mule network after the "
+                  "individual's bank account received dozens of small "
+                  "deposits from unknown senders. Investigators determined "
+                  "that a family acquaintance had obtained the pensioner's "
+                  "banking credentials under the pretext of helping them "
+                  "apply for a government rebate. The account was used "
+                  "to collect and forward scam proceeds totalling "
+                  "over $140,000. The pensioner is not facing charges "
+                  "but the account has been frozen."},
+     ]},
+    {"entity_type": "Individual",
+     "articles": [
+         {"headline": "Single parent wins council community award for resilience",
+          "source": "Local Council Bulletin",
+          "body": "A single parent of two was recognised at a council "
+                  "community resilience event for balancing full-time "
+                  "work and parenting while completing an online diploma. "
+                  "The individual works at a local supermarket and "
+                  "receives family tax benefit payments. Community "
+                  "members praised the individual's determination "
+                  "and positive attitude."},
+         {"headline": "Westpac-AUSTRAC intelligence identifies single-parent accounts in scam network",
+          "source": "AUSTRAC",
+          "body": "A joint AUSTRAC and bank financial intelligence analysis "
+                  "identified a pattern of single-parent account holders "
+                  "being targeted by scam recruiters exploiting financial "
+                  "vulnerability. In identified cases, accounts received "
+                  "frequent small deposits from scam victims, with the "
+                  "funds quickly transferred onward. One account received "
+                  "deposits from 48 different senders in a month — a "
+                  "pattern inconsistent with family benefit credits or "
+                  "retail wages. AUSTRAC flagged the pattern to partner agencies."},
+     ]},
+    {"entity_type": "Student",
+     "articles": [
+         {"headline": "Trade apprentice completes certificate III with top marks",
+          "source": "Australian Apprenticeships",
+          "body": "A young apprentice completed a Certificate III in "
+                  "light vehicle mechanics with distinction, earning "
+                  "an industry award at the graduation ceremony. "
+                  "The apprentice works at a suburban repair workshop "
+                  "and receives a weekly apprentice wage supplemented "
+                  "by small tips from satisfied customers. The employer "
+                  "praised the apprentice's initiative and reliability."},
+         {"headline": "Training provider warns apprentices about mule recruitment on job platforms",
+          "source": "TAFE NSW",
+          "body": "TAFE NSW issued a warning to trade apprentices after "
+                  "a number of students reported being approached through "
+                  "job-seeking apps with offers to earn extra money by "
+                  "'receiving and forwarding' payments. Financial crime "
+                  "investigators said apprentice accounts are attractive "
+                  "to mule network operators because regular small "
+                  "deposits from wages provide cover for illicit deposits. "
+                  "Police said one apprentice's account had forwarded "
+                  "$62,000 in a three-month period, interspersed with "
+                  "legitimate wage credits."},
+     ]},
+    {"entity_type": "Student",
+     "articles": [
+         {"headline": "Engineering student wins hackathon for smart infrastructure app",
+          "source": "Engineers Australia",
+          "body": "A third-year civil engineering student won a national "
+                  "hackathon with an app concept for optimising traffic "
+                  "signal timing. The student receives a Centrelink "
+                  "student payment and earns casual income from campus "
+                  "technical support work. Academic supervisors describe "
+                  "the student as highly capable."},
+         {"headline": "University cybercrime unit identifies engineering student in BEC scheme",
+          "source": "AFP Media Release",
+          "body": "The AFP's Business Email Compromise taskforce identified "
+                  "a university student as a mule used by a BEC syndicate "
+                  "to receive and forward fraudulently diverted business "
+                  "payments. The student's account received 22 deposits "
+                  "over six weeks from companies that had been tricked "
+                  "into redirecting invoice payments. The deposits were "
+                  "individually in the range of $500 to $3,000, consistent "
+                  "with student income, but their combined value exceeded "
+                  "$55,000. The student was recruited through a gaming "
+                  "forum and paid $100 per transaction."},
+     ]},
+    {"entity_type": "Gig Worker",
+     "articles": [
+         {"headline": "NDIS support worker supplements income with gig economy shifts",
+          "source": "Community Care Review",
+          "body": "A part-time NDIS disability support worker balances "
+                  "shifts with a registered provider with food delivery "
+                  "work on days off. The individual receives payments "
+                  "from the delivery platform and the NDIS provider "
+                  "through bank transfers. A support coordinator "
+                  "described the worker as compassionate and responsive "
+                  "to participant needs."},
+         {"headline": "AFP links disability support worker account to drug proceeds network",
+          "source": "AFP Media Release",
+          "body": "The AFP identified a disability support worker's "
+                  "account as a node in a synthetic drug distribution "
+                  "network after a financial intelligence tip. The "
+                  "account received deposits from over 35 senders "
+                  "in a two-month period — a pattern consistent with "
+                  "broad gig economy income but inconsistent with the "
+                  "individual's registered employer and platform payments. "
+                  "Investigators allege the worker was recruited by "
+                  "a syndicate contact and was aware the funds were "
+                  "illicit. The worker was charged and is facing trial."},
+     ]},
+    {"entity_type": "Gig Worker",
+     "articles": [
+         {"headline": "Agency nurse gains recognition for flexible workforce contribution",
+          "source": "Australian Nursing Federation",
+          "body": "A registered nurse working through a nursing agency "
+                  "received a commendation for consistent availability "
+                  "across multiple hospital placements. The individual "
+                  "works irregular shifts and receives weekly agency "
+                  "payments. The ANF noted that agency nurses play an "
+                  "essential role in maintaining safe staffing levels "
+                  "at short notice."},
+         {"headline": "Health sector financial crime alert identifies agency nurse accounts",
+          "source": "AUSTRAC",
+          "body": "AUSTRAC shared a financial intelligence alert with "
+                  "health sector reporting entities following detection "
+                  "of a pattern in which agency nurse accounts received "
+                  "deposits from multiple personal senders interspersed "
+                  "with legitimate agency payroll credits. One identified "
+                  "account received 41 deposits from separate individuals "
+                  "over a five-week period totalling $73,000, alongside "
+                  "regular agency wage payments. Investigators believe "
+                  "the account was used as a mule in a phone scam "
+                  "funnelling network."},
+     ]},
+    {"entity_type": "Individual",
+     "articles": [
+         {"headline": "Market stall vendor earns loyal following for handmade ceramics",
+          "source": "Markets Australia",
+          "body": "A weekend market vendor selling handmade ceramics "
+                  "has built a loyal following over three years. The "
+                  "individual operates at two markets per week, accepting "
+                  "cash and EFTPOS. Income supplements a part-time "
+                  "retail job. Regular customers describe the vendor "
+                  "as creative and personable."},
+         {"headline": "AFP charges market vendor for receiving stolen goods proceeds",
+          "source": "AFP Media Release",
+          "body": "The AFP charged a market trader after investigating "
+                  "their role in a stolen goods network. The individual's "
+                  "bank account received multiple small deposits from "
+                  "a network of associates who sold stolen merchandise "
+                  "at flea markets and online platforms. The deposits "
+                  "were individually consistent with cash market "
+                  "trading income but came from an unusually large "
+                  "number of senders. Total traced proceeds were "
+                  "$98,000 over seven months."},
+     ]},
+    {"entity_type": "Individual",
+     "articles": [
+         {"headline": "Independent musician releases debut EP to positive local reviews",
+          "source": "Music Feeds",
+          "body": "A Sydney-based independent musician released a debut "
+                  "EP to positive reviews in local music media. The "
+                  "individual performs at pubs and small venues, earns "
+                  "royalties through streaming platforms, and receives "
+                  "crowdfunding contributions from supporters. The "
+                  "musician works part-time in hospitality to supplement "
+                  "performance income."},
+         {"headline": "AFP investigation links musician to online romance scam network",
+          "source": "AFP Media Release",
+          "body": "The AFP charged a musician with dealing in proceeds "
+                  "of crime after investigators found the individual's "
+                  "account received payments from romance scam victims "
+                  "interspersed with legitimate streaming royalties "
+                  "and crowdfunding payments. The varied income sources "
+                  "initially obscured the illicit deposits. Over a "
+                  "four-month period, the account received $87,000 "
+                  "from scam victims, forwarded in small tranches to "
+                  "overseas accounts. The musician was allegedly aware "
+                  "the payments were not legitimate."},
+     ]},
+    {"entity_type": "Individual",
+     "articles": [
+         {"headline": "Real estate receptionist praised for customer service excellence",
+          "source": "REIA",
+          "body": "A real estate agency receptionist received an internal "
+                  "award for customer service excellence after consistently "
+                  "high client satisfaction scores. The individual works "
+                  "full-time and receives a regular salary with occasional "
+                  "casual overtime. Colleagues describe the individual "
+                  "as professional and discreet."},
+         {"headline": "AUSTRAC alert identifies real estate administrative accounts in mule network",
+          "source": "AUSTRAC",
+          "body": "An AUSTRAC financial intelligence alert identified "
+                  "a cluster of real estate sector administrative "
+                  "worker accounts receiving funds from property "
+                  "transaction scam victims. Victims believed they "
+                  "were paying legitimate conveyancing deposits when "
+                  "they were in fact paying into mule accounts. "
+                  "One identified account received 29 deposits over "
+                  "three months totalling $115,000 — inconsistent with "
+                  "a single-employer salary. AUSTRAC recommended banks "
+                  "review accounts with high-volume inflows from "
+                  "diverse individuals."},
+     ]},
+    {"entity_type": "Student",
+     "articles": [
+         {"headline": "TAFE student earns merit award for community services diploma",
+          "source": "TAFE NSW",
+          "body": "A community services diploma student received a "
+                  "merit award at the annual TAFE graduation ceremony. "
+                  "The student undertakes practical placement at a "
+                  "local food bank and plans to work in social housing "
+                  "support after graduating. Supervisors praised the "
+                  "student's maturity and commitment to vulnerable "
+                  "clients."},
+         {"headline": "Student services team warns of charity scam recruiters on campus",
+          "source": "TAFE NSW Student Services",
+          "body": "TAFE NSW student services issued a warning about "
+                  "charity scam operators recruiting students to "
+                  "receive and forward donations, claiming to support "
+                  "overseas disaster relief. Students are told the "
+                  "funds are legitimate but financial crime investigators "
+                  "say the deposits come from scam victims. One "
+                  "student's account received 53 individual deposits "
+                  "totalling $61,000 in a six-week period before the "
+                  "student realised the arrangement was fraudulent "
+                  "and contacted police."},
+     ]},
+    {"entity_type": "Gig Worker",
+     "articles": [
+         {"headline": "Food delivery rider earns consistent income across three platforms",
+          "source": "SmartCompany",
+          "body": "A food delivery rider operating across three platforms "
+                  "in Melbourne reports earning a consistent income "
+                  "from multiple small per-delivery payments throughout "
+                  "the day and evening. The individual manages their "
+                  "own vehicle and receives daily platform payouts. "
+                  "The gig model, with many small payments from a single "
+                  "platform, is typical for riders at this scale."},
+         {"headline": "Delivery rider account frozen after mule network detection",
+          "source": "Daily Telegraph",
+          "body": "A Melbourne food delivery rider's bank account was "
+                  "frozen after police identified it as part of a "
+                  "scam funnelling network. Unlike platform payments "
+                  "which come from a single payer, investigators found "
+                  "the account received deposits from over 50 individual "
+                  "senders in a one-month period, each in amounts of "
+                  "$200 to $800. The rider told investigators they were "
+                  "recruited by a contact who offered $200 per week "
+                  "to use the account. The court heard the rider had "
+                  "knowledge of the arrangement's illegitimacy."},
+     ]},
+    {"entity_type": "Gig Worker",
+     "articles": [
+         {"headline": "457 visa holder builds stable gig economy income in Sydney",
+          "source": "SBS News",
+          "body": "A skilled visa holder from the Philippines has "
+                  "built a stable income combining their sponsored "
+                  "employment with weekend gig economy work. The "
+                  "individual sends regular remittances home through "
+                  "a licensed remittance provider. Friends in the "
+                  "Filipino community describe the individual as "
+                  "hardworking and financially responsible."},
+         {"headline": "AUSTRAC flags visa worker accounts in cross-border mule network",
+          "source": "AUSTRAC",
+          "body": "AUSTRAC shared intelligence with partner agencies "
+                  "about a mule network exploiting visa-holder accounts "
+                  "to move scam proceeds overseas under the guise "
+                  "of legitimate remittances. In identified cases, "
+                  "accounts received deposits from dozens of separate "
+                  "Australian senders, with the funds consolidated "
+                  "and forwarded via remittance providers to overseas "
+                  "recipients. The accounts showed fan-in patterns "
+                  "far exceeding normal worker-to-family remittance "
+                  "flows. AUSTRAC alerted licensed remittance providers "
+                  "to monitor for the identified pattern."},
      ]},
 ]
 
@@ -1400,6 +4012,9 @@ print("\n--- Benchmark Summary ---")
 
 
 def _summarise(label: str, ids: list[str]) -> None:
+    if not ids:
+        print(f"  {label:28s}  HELD OUT")
+        return
     s = user_stats[user_stats["user"].isin(ids)]
     print(
         f"  {label:28s}  n={len(ids):2d}  "

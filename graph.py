@@ -59,7 +59,7 @@ def build_graph(mode: str) -> StateGraph:
     """Build and compile the LangGraph graph for the given governance mode.
 
     Args:
-        mode: One of "intrinsic", "hierarchical", or "context_engineered".
+        mode: One of "intrinsic", "hierarchical", "context_engineered", or "llm_context".
 
     Returns:
         A compiled LangGraph application ready to .invoke().

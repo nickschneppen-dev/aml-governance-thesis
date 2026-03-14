@@ -1,4 +1,4 @@
-# Experiment Results: Multi-Agent AML Governance
+# Experiment Results: Multi-Agent AML Governance — gpt-5.1
 
 > **Thesis question:** Does external context injection (Kayba ACE) close the performance gap between
 > intrinsic self-correction and independent hierarchical auditing — at a fraction of the cost?
@@ -10,13 +10,14 @@
 
 | | |
 |---|---|
-| **Dataset** | AMLNet (1.09M transactions, 10k users) — 50 test clients, 50 train clients |
-| **Ground truth** | 22 guilty, 28 innocent per split |
+| **Dataset** | AMLNet (1.09M transactions, 10k users) — 168 test clients, 86 train clients |
+| **Ground truth** | 60 guilty, 108 innocent (test set) |
 | **Model** | `gpt-5.1` (identical across all four modes) |
 | **Classification threshold** | Score ≥ 50 → predicted GUILTY |
-| **Kayba training input** | 50 train traces (intrinsic mode, 37 correct / 13 incorrect) |
+| **Kayba training input** | 86 train traces (intrinsic mode) |
 | **Kayba output** | 28 deduplicated skills, 5.4 KB context playbook |
-| **LLM self-reflection input** | Same 50 train traces, rules synthesised by gpt-5.1 itself |
+| **LLM self-reflection input** | Same 86 train traces, rules synthesised by gpt-5.1 |
+| **Errors** | None — all 168 clients completed successfully across all four modes |
 
 ### The Four Modes
 
@@ -43,9 +44,6 @@ Not all pairwise comparisons are methodologically valid. Each comparison isolate
 | Hierarchical vs Context-Engineered | **Confounded** — architecture *and* Kayba rules differ simultaneously | ❌ |
 | Hierarchical vs LLM-Context | **Confounded** — architecture *and* LLM rules differ simultaneously | ❌ |
 
-The data tables below include all four modes for reference. Findings and thesis implications are
-structured only around the four valid comparisons.
-
 ---
 
 ## 2. Core Results
@@ -54,31 +52,31 @@ structured only around the four valid comparisons.
 
 | Metric | Intrinsic | Hierarchical | Context-Eng | LLM-Context |
 |---|:---:|:---:|:---:|:---:|
-| **Classification Accuracy** | 90.0% | 88.0% | 90.0% | **94.0%** |
-| **Precision** | 0.947 | 0.900 | 0.905 | **1.000** |
-| **Recall** | 0.818 | 0.818 | 0.864 | 0.864 |
-| **F1 Score** | 0.878 | 0.857 | 0.884 | **0.927** |
-| True Positives | 18 | 18 | 19 | 19 |
-| False Positives | 1 | 2 | 2 | **0** |
-| True Negatives | 27 | 26 | 26 | **28** |
-| False Negatives | 4 | 4 | 3 | 3 |
+| **Classification Accuracy** | 92.3% | 90.5% | 95.2% | **100%** |
+| **Precision** | 0.961 | 0.940 | **1.000** | **1.000** |
+| **Recall** | 0.817 | 0.783 | 0.867 | **1.000** |
+| **F1 Score** | 0.883 | 0.855 | 0.929 | **1.000** |
+| True Positives | 49 | 47 | 52 | **60** |
+| False Positives | 2 | 3 | **0** | **0** |
+| True Negatives | 106 | 105 | **108** | **108** |
+| False Negatives | 11 | 13 | 8 | **0** |
 
 ### Score Accuracy
 
 | Metric | Intrinsic | Hierarchical | Context-Eng | LLM-Context |
 |---|:---:|:---:|:---:|:---:|
-| Range Accuracy (score within expected band) | 46.0% | 52.0% | 58.0% | **88.0%** |
-| MAE from midpoint | 17.0 | 16.6 | 16.3 | **10.3** |
+| Range Accuracy (score within expected band) | 55.4% | 44.6% | 94.0% | **97.0%** |
+| MAE from midpoint | 16.6 | 17.1 | 10.6 | **7.6** |
 
 ### Governance Behaviour & Efficiency
 
 | Metric | Intrinsic | Hierarchical | Context-Eng | LLM-Context |
 |---|:---:|:---:|:---:|:---:|
-| Consensus Rate (reviewer approved) | 100% | 100% | 100% | 100% |
-| Avg Revisions per Case | 0.20 | **0.04** | 0.14 | 0.52 |
-| Avg LLM Calls per Case | 3.40 | **3.08** | 3.28 | 4.04 |
-| Avg Score Shift (final − initial) | −2.0 | +0.4 | −2.0 | **−6.4** |
-| Avg Confidence | 81.8 | 81.6 | 81.9 | **85.0** |
+| Consensus Rate (reviewer approved) | 99% | 100% | 100% | 100% |
+| Avg Revisions per Case | 0.28 | **0.04** | 0.65 | 0.57 |
+| Avg LLM Calls per Case | 3.6 | **3.1** | 4.3 | 4.1 |
+| Avg Score Shift (final − initial) | −1.6 | **−0.6** | −6.0 | −3.4 |
+| Abs Avg Score Shift | 2.3 | **1.0** | 8.3 | 9.1 |
 
 ---
 
@@ -88,185 +86,262 @@ structured only around the four valid comparisons.
 
 | Group | n | Truth | Intrinsic | Hierarchical | Context-Eng | LLM-Context |
 |---|:---:|:---:|:---:|:---:|:---:|:---:|
-| **Control Guilty** | 8 | GUILTY | ✅ 100% | ✅ 100% | ✅ 100% | ⚠️ 88% |
-| **Control Innocent** | 8 | INNOCENT | ✅ 100% | ✅ 100% | ✅ 100% | ✅ 100% |
-| **FP Trap: Charity** | 5 | INNOCENT | ✅ 100% | ✅ 100% | ✅ 100% | ✅ 100% |
-| **FP Trap: Payroll** | 5 | INNOCENT | ✅ 100% | ✅ 100% | ✅ 100% | ✅ 100% |
-| **FP Trap: High Roller** | 5 | INNOCENT | ⚠️ 80% | ⚠️ 60% | ⚠️ 60% | ✅ 100% |
-| **FP Trap: Structurer** | 5 | INNOCENT | ✅ 100% | ✅ 100% | ✅ 100% | ✅ 100% |
-| **FN Trap: Sleeper** | 7 | GUILTY | ⚠️ 86% | ✅ 100% | ⚠️ 86% | ✅ 100% |
-| **FN Trap: Smurf** | 7 | GUILTY | ⚠️ 57% | ❌ 43% | ⚠️ 71% | ⚠️ 71% |
+| **Control Guilty** | 16 | GUILTY | ✅ 100% | ⚠️ 94% | ✅ 100% | ✅ 100% |
+| **Control Innocent** | 16 | INNOCENT | ✅ 100% | ✅ 100% | ✅ 100% | ✅ 100% |
+| **FP Trap: Charity** | 23 | INNOCENT | ✅ 100% | ✅ 100% | ✅ 100% | ✅ 100% |
+| **FP Trap: Payroll** | 23 | INNOCENT | ✅ 100% | ✅ 100% | ✅ 100% | ✅ 100% |
+| **FP Trap: High Roller** | 23 | INNOCENT | ⚠️ 91% | ⚠️ 87% | ✅ 100% | ✅ 100% |
+| **FP Trap: Structurer** | 23 | INNOCENT | ✅ 100% | ✅ 100% | ✅ 100% | ✅ 100% |
+| **FN Trap: Sleeper** | 22 | GUILTY | ⚠️ 91% | ⚠️ 86% | ⚠️ 91% | ✅ 100% |
+| **FN Trap: Smurf** | 22 | GUILTY | ❌ 59% | ❌ 59% | ⚠️ 73% | ✅ 100% |
 
-*✅ = strong performance (≥80%)  ⚠️ = partial  ❌ = failure (<50%)*
+*✅ = strong performance (≥80%)  ⚠️ = partial  ❌ = failure (<80%)*
 
 ### Average Risk Score by Group
 
 | Group | Expected | Intrinsic | Hierarchical | Context-Eng | LLM-Context |
 |---|:---:|:---:|:---:|:---:|:---:|
-| Control Guilty | 70–100 | 80.3 | 83.9 | 81.3 | 78.5 |
-| Control Innocent | 0–30 | 14.0 | 17.0 | 15.3 | **14.3** |
-| FP: Charity | 0–30 | 30.0 | 30.2 | 26.6 | **23.6** |
-| FP: Payroll | 0–30 | 39.8 | 42.2 | 40.0 | **22.8** |
-| FP: High Roller | 0–30 | 45.0 | 47.8 | 45.0 | **25.0** |
-| FP: Structurer | 0–30 | 34.4 | 36.0 | 31.4 | **21.4** |
-| FN: Sleeper | 70–100 | 71.6 | **76.6** | 71.0 | **79.9** |
-| FN: Smurf | 70–100 | 55.4 | 53.0 | 55.0 | **57.1** |
+| Control Guilty | 70–100 | 78.5 | 79.7 | 79.4 | **83.4** |
+| Control Innocent | 0–30 | 11.4 | 13.8 | 10.9 | 16.5 |
+| FP: Charity | 0–30 | 27.7 | 28.9 | 24.4 | **22.2** |
+| FP: Payroll | 0–30 | 36.0 | 37.9 | 25.7 | **23.6** |
+| FP: High Roller | 0–30 | 40.6 | 42.0 | 26.3 | **26.1** |
+| FP: Structurer | 0–30 | 30.6 | 31.9 | 25.3 | **22.4** |
+| FN: Sleeper | 70–100 | 76.3 | 73.4 | **77.0** | 79.7 |
+| FN: Smurf | 70–100 | 57.1 | 60.4 | 63.0 | **77.3** |
 
 ---
 
-## 4. What the Results Mean
+## 4. Reasoning Quality
+
+Two LLM judges score each case on a 1–10 scale:
+- **Evidence Coverage:** Does the reasoning cite specific metrics and article claims?
+- **Conclusion Consistency:** Does the reasoning support the final risk decision?
+
+| Metric | Intrinsic | Hierarchical | Context-Eng | LLM-Context |
+|---|:---:|:---:|:---:|:---:|
+| Evidence Coverage (mean) | 9.60 | **9.74** | 9.69 | 9.86 |
+| Evidence Coverage (min) | 6 | 9 | 8 | 8 |
+| Conclusion Consistency (mean) | 7.34 | 7.37 | **8.80** | 8.72 |
+| Conclusion Consistency (min) | 1 | 1 | 3 | 1 |
+
+**Key observation:** Evidence coverage is uniformly high across all modes — gpt-5.1 reliably engages with
+available evidence regardless of governance structure. The meaningful distinction is in conclusion
+consistency: Context-Engineered (8.80) and LLM-Context (8.72) score substantially higher than Intrinsic
+(7.34) and Hierarchical (7.37). Rule injection improves the alignment between stated reasoning and final
+decision — even when the rules were derived from a different model's failure traces.
+
+---
+
+## 5. What the Results Mean
 
 Findings are framed around the four valid pairwise comparisons identified in the comparison design above.
-Cross-comparisons involving Hierarchical vs Context-Engineered or Hierarchical vs LLM-Context are not
-drawn, as both the architecture and the injected content differ in those pairs.
 
-### Finding 1 [Intrinsic vs Hierarchical]: Governance architecture has a small net effect at gpt-5.1
+### Finding 1 [Intrinsic vs Hierarchical]: At gpt-5.1, hierarchical is marginally worse, not better
 
-Comparing the two no-rules conditions isolates the architectural variable: same-context self-review
-(intrinsic) vs separate-context independent auditor (hierarchical).
+At gpt-4o-mini, the hierarchical auditor achieved a net F1 gain via perfect recall — it missed zero
+guilty clients at the cost of many false positives. At gpt-5.1, this dynamic reverses: hierarchical
+underperforms intrinsic on all classification metrics (F1: 0.855 vs 0.883) and produces fewer correct
+decisions overall (152/168 vs 155/168).
 
-Intrinsic edges out hierarchical on F1 (0.878 vs 0.857) and precision (0.947 vs 0.900), while both
-modes achieve identical recall (0.818). The intrinsic mode catches one more true positive and produces
-one fewer false positive. The hierarchical auditor also does slightly worse on FN Smurf (43% vs 57%),
-likely because its fresh context window does not carry the analyst's original evidence chain, making
-subtle buried signals harder to sustain across the audit boundary.
+The FP gap between modes is narrow — hierarchical produces 3 FPs vs intrinsic's 2. The larger difference
+is in false negatives: hierarchical misses 13 guilty clients vs intrinsic's 11. Paradoxically, the
+independent auditor is both more likely to issue FPs and more likely to miss guilty clients than
+self-review. This is visible in the per-group breakdown: hierarchical achieves 94% on Control Guilty
+(1 miss) and 86% on FN Sleeper — both below intrinsic's 100% and 91% respectively.
 
-On the other hand, the hierarchical auditor is more efficient (3.08 vs 3.40 LLM calls; 0.04 vs 0.20
-avg revisions) because its stronger calibration leads it to approve reports on the first pass. The
-average score shift for hierarchical (+0.4) is near-zero, with no systematic escalation — a marked
-difference from the same architecture at gpt-4o-mini capability, where the auditor over-escalated
-by +14.1 on average. This suggests the architectural penalty of independent auditing shrinks as model
-capability increases.
+The hierarchical auditor's very high consensus rate (100%) and low avg revisions (0.04) explain the
+mechanism: unlike at gpt-4o-mini, the gpt-5.1 auditor almost always approves the analyst's first draft.
+The auditor barely intervenes (abs score shift of only 1.0), so when the analyst is wrong, the auditor
+fails to catch it. The problem has shifted from over-escalation to under-intervention.
 
-### Finding 2 [Intrinsic vs Context-Engineered]: Kayba rule injection provides a modest improvement
+This is a model-capability finding: at gpt-4o-mini, the auditor was too aggressive; at gpt-5.1, it is
+too deferential. The hierarchical architecture does not automatically deliver better governance — its
+usefulness depends on the auditor being appropriately calibrated against the analyst's systematic errors.
 
-Injecting Kayba's externally-derived playbook into the self-review step improves F1 from 0.878 to 0.884
-and captures one additional true positive (recall 0.864 vs 0.818). The mode corrects one more FN Smurf
-(71% vs 57%) while maintaining the same FP Payroll and High Roller results as intrinsic. The cost is
-minimal — 3.28 vs 3.40 LLM calls — because the rules reduce the need for rejection-and-revision cycles
-(0.14 vs 0.20 avg revisions).
+### Finding 2 [Intrinsic vs Context-Engineered]: Kayba injection markedly improves precision and score calibration
 
-The improvement is real but narrow. Range accuracy improves from 46% to 58%, and MAE from 17.0 to 16.3.
-Kayba's playbook appears to carry useful signal — it was derived from actual errors on the training set —
-but the gain is not large enough to be decisive on its own.
+Injecting Kayba's playbook (derived from 86 gpt-5.1 training traces) into the self-review step produces
+a clear improvement: F1 rises from 0.883 to 0.929, precision improves from 0.961 to 1.000 (zero false
+positives), and score range accuracy jumps from 55.4% to 94.0%.
 
-### Finding 3 [Intrinsic vs LLM-Context]: Self-synthesised rules produce the largest improvement
+The most striking result is the elimination of all false positives. The 2 FPs that intrinsic generates
+(both in FP High Roller) disappear in context-engineered. The Kayba playbook correctly encodes and applies
+the residual FP bias from the training traces: FP High Roller improves from 91% to 100%, with avg group
+scores dropping from 40.6 to 26.3.
 
-Replacing Kayba's external rules with rules the LLM derived from its own training errors — same
-self-review architecture, same injection point — produces a substantially larger gain: F1 rises from
-0.878 to 0.927, accuracy from 90% to 94%, and precision from 0.947 to 1.000 (zero false positives).
+The remaining gap is in false negatives — context-engineered still misses 8 guilty clients vs intrinsic's
+11, for a net recall of 0.867. The FN Smurf group is the primary holdout (73% vs 59% for intrinsic —
+improved, but not solved). The Kayba playbook addresses the model's residual FP bias effectively but does
+not provide strong enough recall-boosting signal for the smurf pattern.
 
-The mechanism is aggressive downward revision: average score shift of −6.4 vs −2.0 for intrinsic.
-This is concentrated on FP traps — payroll avg drops to 22.8 (from 39.8), high roller to 25.0 (from
-45.0), structurer to 21.4 (from 34.4) — while guilty clients remain above the threshold. The
-self-derived rules appear to have encoded a targeted skepticism: *if a legitimate business explanation
-exists in the knowledge base, quantitative red flags alone are not sufficient*. This principle transfers
-across FP trap subtypes that intrinsic consistently over-flags.
+Score accuracy improvement is substantial: range accuracy 94.0% vs 55.4%, MAE 10.6 vs 16.6. The Kayba
+rules are pushing scores into correct target bands. The avg score shift of −6.0 (vs −1.6 for intrinsic)
+confirms the rules are actively pulling scores downward on cases that would otherwise be over-scored.
 
-The trade-off is a small FN Smurf deterioration (71% vs 57%) — aggressive review that correctly clears
-FP traps also risks over-clearing genuine guilty smurfs with buried evidence. Range accuracy jumps to
-88% (from 46%), and MAE to 10.3 (from 17.0). The additional cost is 0.64 LLM calls per case.
+This is a markedly stronger result than the gpt-4o-mini experiment, where context-engineered barely
+improved on intrinsic. At gpt-5.1, Kayba's generalised skill playbook is genuinely actionable — the model
+can execute on the principles where a weaker model struggled.
 
-### Finding 4 [Context-Engineered vs LLM-Context]: LLM self-synthesis outperforms Kayba extraction
+### Finding 3 [Intrinsic vs LLM-Context]: Perfect classification
 
-With architecture held constant (both are same-context self-review with rules injected at the same
-review step), the source of the rules is the isolated variable. LLM-Context outperforms
-Context-Engineered on every metric: F1=0.927 vs 0.884, accuracy 94% vs 90%, precision 1.000 vs
-0.905, and range accuracy 88% vs 58%.
+LLM-Context achieves F1=1.000, 100% accuracy, zero FPs, and zero FNs. Every group reaches 100%
+accuracy, including the historically difficult FN Smurf (100% vs 59% for intrinsic).
 
-Three factors likely explain the gap:
+This is the strongest result in the experiment. The self-synthesised rules (derived from 86 gpt-5.1
+training traces) provide transformative improvement: MAE drops from 16.6 to 7.6, range accuracy reaches
+97.0%, and the avg smurf group score rises from 57.1 to 77.3 — well into the expected 70–100 range.
 
-**Rule density and specificity.** The LLM-synthesised rules (~17KB) are roughly three times larger
-than Kayba's skillbook (~5.4KB, 28 deduplicated skills). More rules, each targeting a specific
-observed failure pattern, gives the self-reviewer a broader corrective vocabulary.
+The LLM-synthesised rules encode specific corrective heuristics calibrated directly to gpt-5.1's failure
+modes on the training set. The FN Smurf improvement in particular reflects a rule that smurf-like
+transaction profiles (low fan-in, small amounts) can disguise genuinely guilty clients when adverse
+signals are buried in article body text — precisely the failure pattern visible in the gpt-5.1 training
+traces.
 
-**Error-focused synthesis vs skill abstraction.** The synthesis prompt in
-`05_generate_llm_context_rules.py` explicitly structures the input around INCORRECT cases and
-CORRECT TRAP cases, asking the LLM to identify what went wrong and what worked. Kayba's ACE
-pipeline extracts generalised "skills" — reusable reasoning principles — which may be less
-directly targeted at the specific calibration failures the reviewer needs to correct.
+### Finding 4 [Context-Engineered vs LLM-Context]: LLM self-synthesis outperforms Kayba, driven by FN Smurf
 
-**Training trace model mismatch.** Both artefacts were derived from training traces produced by
-gpt-4o-mini running in intrinsic mode. Kayba's pipeline encoded *that model's* failure patterns
-into its 28 skills. The LLM self-synthesis was run *by* gpt-5.1 over those same traces, producing
-rules in a frame gpt-5.1 finds more directly actionable. A fair comparison would require
-regenerating training traces with gpt-5.1 and re-running Kayba on those — the current result
-conflates rule source with model alignment.
+At gpt-4o-mini, LLM-Context F1 (0.952) dramatically exceeded Context-Engineered F1 (0.632). At gpt-5.1,
+both modes improve substantially over intrinsic, and the gap narrows to F1 of 1.000 vs 0.929. Both
+artefacts were derived from the same 86 gpt-5.1 training traces, so the difference reflects source and
+format of rules, not model alignment.
 
-The FN Smurf accuracy is identical (both 71%), suggesting the extra correction strength of LLM
-rules does not further harm recall beyond what context injection already introduces.
+Kayba's playbook eliminates all false positives and dramatically improves score calibration. LLM-context
+still wins on recall (no FNs) and overall F1, but the difference is driven almost entirely by FN Smurf
+(100% vs 73%). Every other group is at 100% for both modes.
 
-### Finding 5 [Cross-cutting]: FP High Roller is the last persistent failure; FN Smurf is a new one
+The remaining advantage of LLM-Context likely reflects rule density and specificity: the LLM-synthesised
+rules (~22KB, highly case-specific) provide more targeted smurf-detection guidance than Kayba's 5.4KB
+generalised skill playbook. The LLM synthesis prompt structures input around specific INCORRECT cases,
+producing rules that directly address the observed failure mode. Kayba extracts generalised "skills" —
+reusable reasoning principles — which encode the right direction but with less precision on the hard cases.
 
-Two groups reveal boundary conditions that cut across all four modes:
+The narrowing gap compared to gpt-4o-mini (F1 gap of 0.320 at gpt-4o-mini vs 0.071 at gpt-5.1) is a
+capability effect: gpt-5.1 can execute on Kayba's general principles more faithfully, reducing the
+advantage of case-specific rules for most trap types except the hardest one (FN Smurf).
 
-**FP High Roller (60–80% for intrinsic/hier/ctx; 100% for LLM-Context):** High-volume clients with
-a casino or investment alibi continue to fool three of four modes. The quantitative signal (fan-out
->80, volume >$200k) appears to dominate the article-based explanation for all modes except LLM-Context,
-which systematically drives these scores to ~25. The self-synthesised rules are the only intervention
-that transfers training-set experience with high-roller profiles to the test set.
+### Finding 5 [Cross-cutting]: gpt-5.1 eliminates the FP failure modes that plagued gpt-4o-mini
 
-**FN Smurf (43–71% across all modes):** Confirmed launderers disguised as gig workers or students,
-with guilt buried in article body text. All modes miss at least two of the seven. Notably, the smurf
-failure emerges in gpt-5.1 despite gpt-4o-mini achieving 100% on this group — a regression. The
-stronger model's improved ability to accept legitimate explanations for quantitative anomalies (which
-resolves FP Payroll and FP High Roller) is the same mechanism that makes it more willing to accept
-a benign cover story for a genuine launderer. This is a precision-recall boundary condition inherent
-to the task, not a correctable governance failure.
+At gpt-4o-mini, Payroll, High Roller, and Structurer FP traps were total failures (0%) across intrinsic,
+hierarchical, and context-engineered. At gpt-5.1, all three are solved or nearly solved in every mode —
+intrinsic alone achieves 100% on Payroll and Structurer, and 91% on High Roller.
+
+This is the clearest capability jump in the data: gpt-5.1 can read article context and apply it to rebut
+quantitative flags without needing additional rules. The qualitative reasoning failure that characterised
+gpt-4o-mini at these traps (anchoring on fan-out/volume while ignoring KB explanations) does not appear
+at scale in gpt-5.1.
+
+The one remaining systematic failure at gpt-5.1 is FN Smurf — 59% accuracy for intrinsic and
+hierarchical. This is a qualitatively different error: the smurf pattern requires reading buried adverse
+signals in article body text and overriding a plausibly innocent transaction profile. Neither the analyst's
+self-review nor the hierarchical auditor resolves this without rule injection. Context-Engineered (73%)
+and LLM-Context (100%) both improve it, suggesting the solution is rule-based: the model needs an
+explicit corrective prior that smurf-like transaction profiles can disguise genuinely guilty clients.
+
+### Finding 6 [Reasoning quality]: Rules improve decision consistency without harming evidence engagement
+
+Evidence coverage scores are uniformly high across all modes (9.60–9.86), confirming that gpt-5.1
+reliably engages with forensic metrics and article content regardless of governance structure. This is a
+baseline quality floor improvement over gpt-4o-mini.
+
+The meaningful differentiation is in conclusion consistency: Context-Engineered (8.80) and LLM-Context
+(8.72) score ~1.4 points higher than Intrinsic (7.34) and Hierarchical (7.37). Rule injection tightens
+the alignment between what the model says in its reasoning and what decision it ultimately issues. Both
+artefacts were derived from gpt-5.1 training traces, so this improvement reflects the direct utility of
+in-distribution corrective rules.
+
+The relatively low conclusion consistency for Hierarchical (7.37, same as intrinsic despite 100%
+consensus) confirms the gpt-5.1 hierarchical auditor's pattern: it approves reasoning it has not
+critically engaged with, rather than genuinely verifying the analyst's argument chain.
 
 ---
 
-## 5. Thesis Implications
+## 6. Comparison with gpt-4o-mini Results
 
-Hypotheses are evaluated only against the valid pairwise comparisons. Hierarchical is not
-compared to Context-Engineered or LLM-Context because both the architecture and the injected
-knowledge differ in those pairs — no clean causal claim can be made.
+The following table compares the gpt-5.1 results (n=168) against the corresponding gpt-4o-mini results
+(n=50 test set, same 4 modes). Dataset sizes differ, making direct numerical comparison approximate,
+but the directional findings are informative.
+
+| Metric | gpt-4o-mini Intrinsic | gpt-5.1 Intrinsic | gpt-4o-mini LLM-Ctx | gpt-5.1 LLM-Ctx |
+|---|:---:|:---:|:---:|:---:|
+| Classification Accuracy | 56.0% | **92.3%** | 95.9% | **100%** |
+| F1 Score | 0.633 | **0.883** | 0.952 | **1.000** |
+| False Positives | 19 | **2** | 0 | **0** |
+| False Negatives | 3 | **11** | 2 | **0** |
+| Score Range Accuracy | 42.0% | **55.4%** | 84.0% | **97.0%** |
+| MAE | 30.4 | **16.6** | 11.3 | **7.6** |
+
+**Key cross-model findings:**
+
+1. **Baseline capability:** gpt-5.1 intrinsic (F1=0.883) vastly outperforms gpt-4o-mini intrinsic
+   (F1=0.633). The FP failure modes that defined gpt-4o-mini results — Payroll 0%, High Roller 0%,
+   Structurer 0% — are resolved at the base model level in gpt-5.1.
+
+2. **Shifted failure mode:** gpt-5.1's primary failure is FN Smurf (59%), while gpt-4o-mini's primary
+   failures were FP traps. The improvement in base model capability shifts the error distribution
+   from systematic over-flagging to selective under-flagging on the hardest buried-signal cases.
+
+3. **Rule injection still helps at gpt-5.1:** Despite a much stronger baseline, both context-engineered
+   and LLM-context still meaningfully improve results. The ceiling at gpt-5.1 intrinsic (92.3%) leaves
+   room for rule-injection gains that lead to perfect classification under LLM-Context.
+
+4. **Hierarchical architecture diverges across models:** At gpt-4o-mini, hierarchical achieved higher F1
+   via perfect recall but with severe FP inflation. At gpt-5.1, it underperforms intrinsic on both
+   precision and recall — the auditor became deferential rather than aggressive. This model-dependency
+   of the hierarchical effect is an important finding for the thesis.
+
+---
+
+## 7. Thesis Implications
 
 | Comparison | Hypothesis | Result |
 |---|---|---|
-| Intrinsic vs Hierarchical | Governance architecture affects accuracy | **Weak support** — intrinsic edges out hierarchical (F1=0.878 vs 0.857), but the gap is small and direction-dependent on model capability |
-| Intrinsic vs Hierarchical | Independent auditing prevents confirmation bias | **Not supported as framed** — 100% consensus in both modes; hierarchical does not catch more errors, it catches different ones (better FN Sleeper, worse FN Smurf) |
-| Intrinsic vs Context-Engineered | Kayba rule injection improves on intrinsic | **Supported, modestly** — F1=0.884 vs 0.878; one additional TP, better smurf recall |
-| Intrinsic vs LLM-Context | LLM self-reflection rules improve on intrinsic | **Strongly supported** — F1=0.927 vs 0.878; zero FPs, 88% range accuracy |
-| Context-Eng vs LLM-Context | LLM self-synthesis outperforms Kayba extraction | **Supported** — F1=0.927 vs 0.884; LLM rules induce stronger, better-targeted correction |
+| Intrinsic vs Hierarchical | Governance architecture affects accuracy | **Not supported at gpt-5.1** — hierarchical slightly underperforms intrinsic (F1: 0.855 vs 0.883); the auditor is too deferential, not too aggressive |
+| Intrinsic vs Hierarchical | Independent auditing prevents confirmation bias | **Not supported at gpt-5.1** — auditor confirms analyst output ~100% of the time; net result is passive rather than corrective |
+| Intrinsic vs Context-Engineered | Kayba rule injection improves on intrinsic | **Supported** — F1 0.929 vs 0.883, zero FPs, score accuracy 94% vs 55%; Kayba playbook derived from gpt-5.1 training traces |
+| Intrinsic vs LLM-Context | LLM self-reflection rules improve on intrinsic | **Strongly supported** — F1=1.000 vs 0.883; perfect classification; all trap groups resolved |
+| Context-Eng vs LLM-Context | LLM self-synthesis outperforms Kayba extraction | **Supported but gap narrows** — F1 1.000 vs 0.929; difference driven entirely by FN Smurf (100% vs 73%); Kayba is genuinely effective but less targeted on the hardest trap type |
 
 ### Suggested framing for thesis write-up
 
-The results are best structured around the two independent experimental axes:
+The gpt-5.1 results should be framed as a **model-capability robustness check** for the governance
+findings established at gpt-4o-mini:
 
-**Axis 1 — Governance architecture:** Intrinsic vs Hierarchical isolates whether a separate-context
-independent auditor outperforms same-context self-review. At gpt-5.1, the architecture difference
-is small and nuanced: intrinsic is marginally better overall, but hierarchical performs better on
-FN Sleeper (100% vs 86%) at the cost of FN Smurf (43% vs 57%). The auditor's separate context
-prevents anchoring, which helps for subtle true positives but hurts for cases where the analyst's
-original evidence chain is the critical reasoning artefact.
+**Axis 1 — Governance architecture (Intrinsic vs Hierarchical):**
+The hierarchical auditor's behaviour is strongly model-dependent. At gpt-4o-mini it over-escalated
+(too aggressive, high FPs); at gpt-5.1 it under-intervenes (too deferential, slightly higher FNs). In
+neither model does it achieve the idealised outcome of a well-calibrated independent reviewer. This
+suggests that the architectural advantage of hierarchical governance is not robust: it requires careful
+calibration of the auditor's sensitivity level to the analyst's specific failure modes, which may shift
+across model versions.
 
-**Axis 2 — Knowledge injection:** Intrinsic vs Context-Engineered vs LLM-Context tests whether
-adding rules to the self-review step helps, and whether the source of those rules matters. Both
-injection conditions outperform the no-rules baseline; LLM-Context substantially more so. The
-finding that LLM-synthesised rules outperform Kayba's extracted skills (F1=0.927 vs 0.884) is
-the novel contribution, with three plausible contributing factors: the LLM rules are ~3× denser,
-are synthesised with an explicit error-focus rather than general skill abstraction, and are produced
-by the same model that consumes them. The latter is also a confound: both artefacts were derived
-from gpt-4o-mini training traces, meaning Kayba's skills encode that model's failure patterns while
-the LLM rules were synthesised by gpt-5.1 from those same traces. A fully controlled comparison
-requires regenerating training traces with gpt-5.1 and re-running Kayba on those before the
-source-of-rules variable is cleanly isolated.
+**Axis 2 — Knowledge injection (Intrinsic vs Context-Engineered vs LLM-Context):**
+Rule injection improves performance at both capability levels, but the mechanism shifts. At gpt-4o-mini,
+rules were necessary to overcome systematic quantitative anchoring that the base model could not self-
+correct. At gpt-5.1, the base model is better calibrated, but rules still improve the residual error
+profile — especially the FN Smurf gap. Both artefacts were derived from gpt-5.1 training traces, making
+this a clean comparison of rule source (Kayba generalised skills vs LLM case-specific rules) without
+model mismatch confounds.
+
+The narrowing gap between Context-Engineered and LLM-Context at gpt-5.1 (from F1 gap of 0.320 at
+gpt-4o-mini to 0.071 at gpt-5.1) is the central cross-model finding: as base model capability increases,
+the source of rules matters less. A stronger model can execute on Kayba's general principles more
+faithfully, reducing the advantage of highly specific, error-focused rules — except for the hardest trap
+type (FN Smurf), where case-specific rules still provide a decisive edge.
 
 ---
 
-## 6. Output Files
+## 8. Output Files
 
 | File | Contents |
 |---|---|
-| `results/test/gpt-5.1/run_1/summary.csv` | Wide-format raw scores for all 50 clients × 4 modes |
+| `results/test/gpt-5.1/run_1/summary.csv` | Wide-format raw scores for 168 clients × 4 modes |
 | `results/test/gpt-5.1/run_1/evaluation.csv` | Per-client computed metrics (in_range, correct, score_shift, etc.) |
 | `results/test/gpt-5.1/run_1/evaluation_{mode}.csv` | Per-mode artifact (logged to MLflow) |
 | `results/test/gpt-5.1/run_1/{mode}/*.json` | Full AgentState for each client — forensics, news, reasoning, review |
-| `results/old_runs/RESULTS_gpt-4o-mini.md` | Previous results under gpt-4o-mini (3 modes: intrinsic, hierarchical, ctx) |
-| `external_agent_injection.txt` | Kayba's 28-skill context playbook (injected into ctx mode) |
-| `llm_context_rules.txt` | Self-synthesised rules from training traces (injected into llm_context mode) |
-| `training_traces/*.md` | 50 annotated train traces fed to both Kayba and the LLM synthesiser |
+| `results/old_runs/gpt-5.1_n50_old/` | Earlier n=50 gpt-5.1 results before dataset expansion to n=168 |
+| `external_agent_injection.txt` | Kayba's 28-skill context playbook (derived from 86 gpt-5.1 train traces) |
+| `llm_context_rules.txt` | Self-synthesised rules from 86 gpt-5.1 training traces |
+| `training_traces/*.md` | 86 annotated train traces fed to both Kayba and the LLM synthesiser |
 
 To inspect a specific client's full reasoning chain:
 ```python
@@ -278,6 +353,7 @@ print(state["review_output"]["reasoning"])
 
 To reproduce the evaluation:
 ```bash
+LLM_MODEL=gpt-5.1 python 02_run_experiment.py --dataset test --modes intrinsic hierarchical context_engineered llm_context --model gpt-5.1
 python 03_evaluate.py --dataset test --model gpt-5.1
 mlflow ui  # http://127.0.0.1:5000
 ```

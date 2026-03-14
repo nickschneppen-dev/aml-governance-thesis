@@ -9,7 +9,10 @@ Three levels of evaluation:
   Level 1 -- Score Accuracy:  range accuracy, MAE
   Level 2 -- Classification:  precision, recall, F1 (binary: guilty/innocent)
   Level 3 -- Per-Group:       breakdown by trap type (the thesis question)
-  Bonus   -- Reasoning Quality: LLM-judged evidence coverage via mlflow.evaluate()
+  Bonus   -- Reasoning Quality: two LLM judges via mlflow.evaluate()
+               evidence_coverage    (1-10): how specifically evidence is cited
+               conclusion_consistency (1-10): does conclusion follow agent's own evidence?
+             Both judges run per-client and are broken down correct-vs-incorrect.
 
 Usage:
     python 03_evaluate.py                                     # evaluate gpt-4o-mini, run 1 (defaults)
@@ -285,118 +288,283 @@ def build_evaluation_df(df: pd.DataFrame) -> pd.DataFrame:
 
 
 # ---------------------------------------------------------------------------
-# Reasoning quality evaluation (mlflow.evaluate with LLM judge)
+# Reasoning quality evaluation (mlflow.evaluate with LLM judges)
+#
+# Two separate metrics replace the old 1-5 "reasoning_quality":
+#
+#   evidence_coverage (1-10)
+#       Does the agent cite SPECIFIC metric values and SPECIFIC article
+#       claims?  The old 1-5 rubric let agents score 4-5 with generic
+#       phrases like "the data shows high volume."  This rubric requires
+#       exact numbers (e.g., "Fan-In=23") and specific article content
+#       to score above 6.
+#
+#   conclusion_consistency (1-10)
+#       Does the agent's stated conclusion (embedded in the input as
+#       "[Risk Score: X/100 → HIGH/LOW RISK]") follow from the evidence
+#       it cited in its own reasoning?  The judge does NOT know whether the
+#       conclusion is factually correct — it only evaluates internal logical
+#       consistency.  This catches "fluent but wrong" reasoning where an
+#       agent cites an alibi and then concludes HIGH RISK anyway.
+#
+# After scoring, per-client scores are joined with the correct/incorrect
+# classification flag and broken down as:
+#   {metric}/correct_mean, {metric}/incorrect_mean, {metric}/gap
+# A useful metric should show a positive gap (correct cases score higher).
 # ---------------------------------------------------------------------------
-REASONING_JUDGE_PROMPT = """\
-You are an AML compliance expert evaluating the quality of a risk assessment's \
-reasoning. You will receive:
 
-1. The agent's reasoning text (the assessment to evaluate).
-2. The ground truth context (what the correct assessment should reference).
+EVIDENCE_COVERAGE_PROMPT = """\
+You are an expert AML compliance auditor evaluating how specifically an AI \
+agent's reasoning cites evidence. You will receive:
 
-## Scoring Criteria (1-5)
+1. The agent's reasoning text (prefixed with its stated risk score).
+2. The ground truth rationale (what a correct assessment should reference).
 
-1 = Ignores key evidence, relies on assumptions or generic statements. \
-Misses obvious red flags or exculpatory evidence entirely.
+## Scoring Criteria (1–10)
 
-2 = References some data points but misses critical signals. For example, \
-mentions transaction volume but ignores adverse news intelligence, or vice versa.
+1–2  No specific evidence cited. The agent makes assertions without referencing
+     any data. Example of a 1: "The high fan-in is suspicious and indicates
+     potential money laundering." No metric values, no article references.
 
-3 = Covers the main evidence from both quantitative metrics and qualitative \
-news, but fails to address conflicting signals or does not weigh them \
-against each other.
+3–4  Evidence referenced but vague. Generic phrases only — e.g., "the
+     transaction data shows elevated volume" without citing the actual value,
+     or "the article raises concerns" without stating what they are. Only ONE
+     evidence stream addressed (quantitative OR qualitative, not both).
 
-4 = Thorough coverage of both quantitative and qualitative evidence. \
-Addresses conflicting signals and explains how they were weighed. \
-Cites specific numbers and article claims.
+5–6  Both quantitative metrics and knowledge base content mentioned. At least
+     ONE specific value or article claim given. Conflicts between the two
+     streams acknowledged but not resolved. A moderate summary.
 
-5 = Comprehensive: cites specific metric values (e.g., "Fan-In=25"), \
-quotes or paraphrases specific article claims, explicitly addresses \
-ALL conflicts between quantitative and qualitative evidence, and \
-clearly explains which evidence was decisive and why.
+7–8  Specific metric values cited by number (e.g., "Fan-In = 23, above the
+     threshold of 20") AND specific article claims referenced by content
+     (e.g., "the article identifies the entity as a registered NGO receiving
+     donations from 3,000+ donors"). Conflicts explicitly addressed.
 
-## Important
+9–10 ALL material metrics cited with exact values. Article claims accurately
+     quoted or paraphrased by substance (not just "the article says…").
+     Every conflict between quantitative and qualitative evidence explicitly
+     resolved with evidential logic. States which evidence was decisive and
+     why. Notes absence of flags where relevant (e.g., "no volume or fan-in
+     threshold was breached, making the knowledge base signal the ONLY risk
+     indicator").
 
-- A high score requires citing SPECIFIC data, not just saying "the data shows...".
-- Addressing conflicting evidence is mandatory for scores above 3.
-- For cases where quantitative data is clean but qualitative intelligence \
-is adverse (or vice versa), the reasoning MUST acknowledge this tension.
+## Rules
+
+- Score 1–4 if no specific numeric value is cited anywhere.
+- Score 7+ ONLY if the agent cites BOTH a specific number AND a specific
+  article claim by substance.
+- Score 9–10 ONLY if every conflict is explicitly resolved AND the decisive
+  evidence is named.
+- Ignore the risk score prefix when scoring — evaluate only the reasoning body.
+
+Respond with ONLY an integer from 1 to 10.
+"""
+
+CONCLUSION_CONSISTENCY_PROMPT = """\
+You are an expert AML compliance auditor. Your task is to evaluate whether an
+AI agent's stated risk conclusion is internally consistent with the evidence
+it cited in its own reasoning.
+
+The input begins with "[Stated Risk Score: X/100 → HIGH RISK]" or "LOW RISK".
+The reasoning that follows is the agent's own explanation.
+
+CRITICAL: Do NOT evaluate whether the conclusion is factually correct.
+          Evaluate ONLY whether the conclusion logically follows from the
+          evidence the agent itself cited. An agent that correctly concludes
+          LOW RISK after citing strong alibi evidence scores 9–10. An agent
+          that cites the same alibi evidence but concludes HIGH RISK also
+          scores 1–2 — regardless of which is factually right.
+
+## Scoring Criteria (1–10)
+
+1–2  Direct contradiction. The agent's own reasoning explicitly supports the
+     OPPOSITE conclusion. Examples:
+     - Agent writes "the article confirms this is a legitimate NGO explaining
+       the high fan-in" → then concludes HIGH RISK.
+     - Agent cites a leaked intelligence brief naming the subject as a terror
+       financier → then concludes LOW RISK.
+
+3–4  Weak inconsistency. The reasoning leans toward one conclusion but the
+     stated score points the other way without adequate justification. The
+     logical gap is clear but not as stark as 1–2.
+
+5–6  Partial consistency. The conclusion is broadly defensible from the cited
+     evidence, but the agent does not clearly explain why it outweighs the
+     countervailing signals it acknowledged.
+
+7–8  Clear consistency. The conclusion directly follows from the evidence
+     cited. The agent identifies which evidence was decisive and why it
+     outweighs the conflicting signals.
+
+9–10 Rigorous consistency. The agent explicitly anticipates and dismisses the
+     alternative interpretation using cited evidence. The conclusion is the
+     only reasonable inference from the agent's own argument.
+
+## Rules
+
+- If the agent cites only one side of the evidence and reaches the consistent
+  conclusion, score 7–10 depending on clarity of reasoning.
+- If the agent cites mixed evidence, score based on whether the stated
+  rationale for prioritising one side is convincing.
+- Do NOT use the ground truth context — it is not provided.
+
+Respond with ONLY an integer from 1 to 10.
 """
 
 
 def evaluate_reasoning(
-    df: pd.DataFrame, results_dir: Path, prefix: str, run_name: str
+    df: pd.DataFrame,
+    eval_df: pd.DataFrame,
+    results_dir: Path,
+    prefix: str,
+    run_name: str,
 ) -> None:
-    """Run mlflow.evaluate() on reasoning text for one governance mode.
+    """Run mlflow.evaluate() with two LLM judges for one governance mode.
 
-    Uses an LLM judge to score reasoning quality on a 1-5 scale.
-    Results are logged as an MLflow evaluation artifact.
+    Judges:
+      evidence_coverage       — 1-10, specificity of citations
+      conclusion_consistency  — 1-10, does conclusion follow agent's own evidence?
+
+    After scoring, breaks down both metrics by correct/incorrect classification
+    and logs {metric}/correct_mean, {metric}/incorrect_mean, {metric}/gap
+    to the active MLflow run.
     """
     mode_label = MODE_LABELS[prefix]
+    score_col = f"{prefix}_score"
+    correct_col = f"{prefix}_correct"
     reasoning_map = load_reasoning(results_dir, prefix)
 
     if not reasoning_map:
         print(f"  No reasoning JSONs found for {mode_label}, skipping LLM evaluation.")
         return
 
-    # Build evaluation DataFrame
+    # Build evaluation DataFrame — inputs include the risk score so the
+    # conclusion_consistency judge can see what conclusion was stated.
     rows = []
     for _, row in df.iterrows():
         cid = row["client_id"]
         if cid not in reasoning_map:
             continue
-        rows.append(
-            {
-                "client_id": cid,
-                "inputs": reasoning_map[cid],
-                "ground_truth": row["rationale"],
-                "group_label": row["group_label"],
-            }
+        score = pd.to_numeric(row.get(score_col), errors="coerce")
+        if pd.isna(score):
+            continue
+        score_int = int(score)
+        risk_label = "HIGH RISK" if score_int >= CLASSIFICATION_THRESHOLD else "LOW RISK"
+        # Prefix reasoning with the stated conclusion so conclusion_consistency
+        # can evaluate whether it follows from the cited evidence.
+        formatted = (
+            f"[Stated Risk Score: {score_int}/100 \u2192 {risk_label}]\n\n"
+            f"[Reasoning]:\n{reasoning_map[cid]}"
         )
+        # Retrieve the correct/incorrect flag from eval_df
+        ev_row = eval_df[eval_df["client_id"] == cid]
+        correct_flag = ev_row[correct_col].iloc[0] if (len(ev_row) and correct_col in ev_row.columns) else None
+        rows.append({
+            "client_id": cid,
+            "inputs": formatted,
+            "ground_truth": row["rationale"],
+            correct_col: correct_flag,
+        })
 
     if not rows:
         print(f"  No matched reasoning for {mode_label}, skipping LLM evaluation.")
         return
 
-    eval_df = pd.DataFrame(rows)
+    judge_df = pd.DataFrame(rows)
 
     from mlflow.metrics.genai import make_genai_metric
 
-    reasoning_quality = make_genai_metric(
-        name="reasoning_quality",
+    judge_model = f"openai:/{os.getenv('LLM_MODEL', 'gpt-4o-mini')}"
+
+    evidence_coverage = make_genai_metric(
+        name="evidence_coverage",
         definition=(
-            "Measures whether an AML risk assessment's reasoning "
-            "demonstrates thorough evidence coverage, cites specific "
-            "data points, and addresses conflicting signals."
+            "Scores 1-10 how specifically an AML risk assessment cites "
+            "quantitative metrics and knowledge base article claims. "
+            "Requires exact numeric values and specific article content "
+            "to score above 6."
         ),
-        grading_prompt=REASONING_JUDGE_PROMPT,
-        model=f"openai:/{os.getenv('LLM_MODEL', 'gpt-4o-mini')}",
+        grading_prompt=EVIDENCE_COVERAGE_PROMPT,
+        model=judge_model,
+        parameters={"temperature": 0},
+        greater_is_better=True,
+        aggregations=["mean", "min", "max"],
+    )
+
+    conclusion_consistency = make_genai_metric(
+        name="conclusion_consistency",
+        definition=(
+            "Scores 1-10 whether the agent's stated risk conclusion "
+            "(embedded in the input prefix) follows from the evidence "
+            "the agent itself cited. Low scores flag fluent-but-wrong "
+            "reasoning where the conclusion contradicts the agent's "
+            "own evidence."
+        ),
+        grading_prompt=CONCLUSION_CONSISTENCY_PROMPT,
+        model=judge_model,
         parameters={"temperature": 0},
         greater_is_better=True,
         aggregations=["mean", "min", "max"],
     )
 
     print(f"  Running LLM reasoning evaluation for {mode_label} "
-          f"({len(eval_df)} clients)...")
+          f"({len(judge_df)} clients) — two judges (1-10 scale)...")
 
     results = mlflow.evaluate(
-        data=eval_df,
+        data=judge_df,
         predictions="inputs",
         targets="ground_truth",
         model_type=None,
-        extra_metrics=[reasoning_quality],
+        extra_metrics=[evidence_coverage, conclusion_consistency],
         evaluators="default",
     )
 
-    # Log aggregate reasoning metrics explicitly
+    # ── Log aggregate metrics ──
+    logged_metrics = []
     if results.metrics:
         for key, value in results.metrics.items():
-            if "reasoning_quality" in key:
+            if any(m in key for m in ["evidence_coverage", "conclusion_consistency"]):
                 mlflow.log_metric(key, value)
+                logged_metrics.append(f"{key}={value:.2f}")
+    if logged_metrics:
+        print(f"    Aggregates: {', '.join(logged_metrics)}")
 
-    print(f"  Reasoning evaluation logged for {mode_label}.")
+    # ── Correct-vs-Incorrect breakdown ──
+    # This is the discriminating test: a useful reasoning metric should score
+    # correct cases higher than incorrect ones.
+    table_key = "eval_results_table"
+    if table_key in results.tables and correct_col in judge_df.columns:
+        scored = results.tables[table_key].copy()
+        scored["client_id"] = judge_df["client_id"].values
+        scored[correct_col] = judge_df[correct_col].values
 
-    return results
+        for metric_name in ["evidence_coverage/score", "conclusion_consistency/score"]:
+            # mlflow metric column names vary slightly by version
+            col = metric_name if metric_name in scored.columns else metric_name.split("/")[0]
+            if col not in scored.columns:
+                continue
+            scored[col] = pd.to_numeric(scored[col], errors="coerce")
+            correct_scores = scored[scored[correct_col] == 1][col].dropna()
+            incorrect_scores = scored[scored[correct_col] == 0][col].dropna()
+
+            short = metric_name.split("/")[0]
+            if len(correct_scores) > 0:
+                mlflow.log_metric(f"{short}/correct_mean", correct_scores.mean())
+            if len(incorrect_scores) > 0:
+                mlflow.log_metric(f"{short}/incorrect_mean", incorrect_scores.mean())
+            if len(correct_scores) > 0 and len(incorrect_scores) > 0:
+                gap = correct_scores.mean() - incorrect_scores.mean()
+                mlflow.log_metric(f"{short}/correct_vs_incorrect_gap", gap)
+                direction = "+" if gap >= 0 else ""
+                print(
+                    f"    {short}: correct={correct_scores.mean():.2f} "
+                    f"(n={len(correct_scores)})  "
+                    f"incorrect={incorrect_scores.mean():.2f} "
+                    f"(n={len(incorrect_scores)})  "
+                    f"gap={direction}{gap:.2f}"
+                )
+
+    print(f"  Reasoning evaluation complete for {mode_label}.")
 
 
 # ---------------------------------------------------------------------------
@@ -409,6 +577,7 @@ def log_run(
     prefix: str,
     metrics: dict,
     run_name: str,
+    holdout_group: str | None = None,
 ) -> None:
     """Log one governance mode as an MLflow run."""
     mode_label = MODE_LABELS[prefix]
@@ -421,6 +590,8 @@ def log_run(
         mlflow.log_param("classification_threshold", CLASSIFICATION_THRESHOLD)
         mlflow.log_param("max_revisions", 2)
         mlflow.log_param("n_clients", metrics["n"])
+        if holdout_group:
+            mlflow.log_param("holdout_group", holdout_group)
 
         # ── Metrics (Level 1 + 2 + behavioural) ──
         for key, value in metrics.items():
@@ -456,8 +627,8 @@ def log_run(
         mode_eval.to_csv(artifact_path, index=False)
         mlflow.log_artifact(str(artifact_path))
 
-        # ── Reasoning quality (LLM judge) ──
-        evaluate_reasoning(df, results_dir, prefix, run_name)
+        # ── Reasoning quality (LLM judges) ──
+        evaluate_reasoning(df, eval_df, results_dir, prefix, run_name)
 
         print(f"  MLflow run logged: {full_run_name} (ID: {run.info.run_id})")
 
@@ -492,6 +663,15 @@ def main() -> None:
         default="1",
         help="Replicate identifier matching the one used in 02_run_experiment.py "
              "(default: 1). Reads results/{dataset}/{model}/run_{run_id}/summary.csv.",
+    )
+    parser.add_argument(
+        "--holdout-group",
+        choices=["C1", "C2", "C3", "C4", "D1", "D2"],
+        default=None,
+        dest="holdout_group",
+        help="When evaluating after a holdout experiment, mark this trap group "
+             "as OOD in the per-group breakdown. The test set is unchanged; "
+             "this flag only adds an annotation to the output.",
     )
     args = parser.parse_args()
 
@@ -545,10 +725,21 @@ def main() -> None:
             print(f"  Avg confidence:          {metrics['avg_confidence']:.1f}")
 
         # Per-group summary
+        # Map CLI --holdout-group codes to group_label keys used in GROUP_ORDER.
+        _holdout_map = {
+            "C1": "fp_trap:charity",
+            "C2": "fp_trap:payroll",
+            "C3": "fp_trap:high_roller",
+            "C4": "fp_trap:structurer",
+            "D1": "fn_trap:sleeper",
+            "D2": "fn_trap:smurf",
+        }
+        holdout_label = _holdout_map.get(args.holdout_group) if args.holdout_group else None
+
         print(f"\n  Per-Group Breakdown:")
         print(f"  {'Group':<25} {'Range Acc':>10} {'Class Acc':>10} "
-              f"{'Avg Score':>10} {'MAE':>8} {'Consensus':>10} {'n':>4}")
-        print(f"  {'-' * 80}")
+              f"{'Avg Score':>10} {'MAE':>8} {'Consensus':>10} {'n':>4}  {'Note'}")
+        print(f"  {'-' * 90}")
         for group_label in GROUP_ORDER:
             safe = group_label.replace(":", "_")
             key_prefix = f"group/{safe}"
@@ -560,6 +751,7 @@ def main() -> None:
                 if consensus_key in metrics
                 else f"{'N/A':>9}"
             )
+            ood_note = "  *** OOD — rules never trained on this type ***" if group_label == holdout_label else ""
             print(
                 f"  {group_label:<25} "
                 f"{metrics[f'{key_prefix}/range_accuracy']:>9.0%} "
@@ -568,7 +760,11 @@ def main() -> None:
                 f"{metrics[f'{key_prefix}/mae_midpoint']:>8.1f} "
                 f"{consensus_str} "
                 f"{metrics[f'{key_prefix}/n']:>4.0f}"
+                f"{ood_note}"
             )
+        if holdout_label:
+            print(f"\n  *** {args.holdout_group} ({holdout_label}) is the OOD generalisation test group.")
+            print(f"      Rule-synthesis artefacts were not trained on any {args.holdout_group} examples.")
         print()
 
     # ── Build detailed evaluation CSV ──
@@ -588,7 +784,8 @@ def main() -> None:
         else f"{args.model}_r{args.run_id}"
     )
     for prefix in active_modes:
-        log_run(df, eval_df, results_dir, prefix, all_metrics[prefix], run_name_prefix)
+        log_run(df, eval_df, results_dir, prefix, all_metrics[prefix], run_name_prefix,
+                holdout_group=args.holdout_group)
 
     print(f"\nDone. Run 'mlflow ui' and open http://localhost:5000 to compare runs.")
     print(f"Select both runs -> click 'Compare' for side-by-side view.")

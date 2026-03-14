@@ -272,6 +272,95 @@ this comparison — both artefacts are derived from and applied to the same gpt-
 
 ---
 
+## 7. Hierarchical Auditor Failure Analysis
+
+> **For subsequent experiments:** Run `python 06_analyse_auditor.py` after each full experiment and
+> paste the output below. This section documents which of the two competing hypotheses best explains
+> hierarchical over-escalation for that model/dataset combination.
+
+**Hypotheses under test:**
+- **H-A (Context-window isolation):** The auditor lacks the analyst's evidence chain and defaults to
+  salient quantitative signals when re-evaluating from raw data. Signature: citations dominated by
+  metric names (fan_in, fan_out, volume), little or no engagement with KB article content.
+- **H-B (Prompt under-constraining):** The auditor's system prompt does not adequately instruct it to
+  consider legitimate explanations for flags. Signature: citations acknowledge KB content but still
+  treat quantitative flags as dispositive.
+
+*This section is a template. The analysis below was run retrospectively on the n=50 gpt-4o-mini results
+with 06_analyse_auditor.py as a methodology proof-of-concept. Future RESULTS files should include this
+section populated from the corresponding experiment.*
+
+### Summary (n=50, gpt-4o-mini, retrospective)
+
+| Metric | Value |
+|---|---|
+| FP errors in hierarchical mode | 20 / 28 innocent clients |
+| Avg score escalation (intrinsic → hierarchical) for FP errors | +13.2 points |
+| Auditor citations classified QUANT | 27 / 42 (64%) |
+| Auditor citations classified QUAL | 6 / 42 (14%) |
+
+### Reasoning Stance Breakdown
+
+| Stance | n | % | Interpretation |
+|---|:---:|:---:|---|
+| QUANT_DOMINANT | 11 | 55% | Auditor cites only raw flags; no KB engagement |
+| MIXED | 7 | 35% | Sees KB context but treats quantitative flags as dispositive |
+| QUAL_ENGAGED | 1 | 5% | Genuinely wrestles with qualitative evidence before escalating |
+| DISMISSAL | 1 | 5% | Acknowledges KB explanation, rejects it as unverified |
+
+### Per-Subtype Breakdown
+
+| Group | n (FP errors) | Dominant stance | Interpretation |
+|---|:---:|---|---|
+| FP Payroll | 7/7 | QUANT_DOMINANT (5), MIXED (2) | Auditor treats fan_out=100+ as standalone finding; payroll explanation never engages |
+| FP High Roller | 2/5 | QUANT_DOMINANT (2) | Volume/fan_out flags treated as dispositive |
+| FP Charity | 4/5 | QUANT_DOMINANT (2), MIXED (2) | Fan-in threshold acknowledged but NGO context dismissed |
+| FP Structurer | 5/5 | MIXED (3), QUANT_DOMINANT (1), QUAL_ENGAGED (1) | Most varied; one case genuinely reads article |
+
+### Hypothesis Assessment
+
+**H-A is the primary explanation (60% of cases):** The majority of auditor rejections show no
+substantive engagement with KB article content. The auditor re-evaluates from raw quantitative data
+in a fresh context window, finds a flag, and escalates — the analyst's carefully constructed
+evidence chain is invisible to it.
+
+**H-B is a secondary factor (40% of cases):** In the MIXED cases, the auditor does read the KB
+context but still concludes that quantitative flags are dispositive. This subset implicates the
+auditor prompt: it instructs the auditor to check "all claims from the news articles" but does not
+explicitly instruct it to treat flags as rebuttable when a plausible legitimate explanation exists.
+
+**Both hypotheses have different design implications.** H-A is architectural: the separate context
+window is a structural information loss that cannot be fixed by prompt engineering alone. H-B is
+addressable through prompt revision. The data suggest a combined intervention would be required to
+materially reduce hierarchical FP rate: (1) pass the analyst's full evidence chain into the auditor
+context, and (2) add an explicit "flags are rebuttable" instruction to the auditor prompt.
+
+### Representative Verbatim Quotations
+
+**QUANT_DOMINANT — C4562 (FP Charity):**
+> "The Analyst's report fails to directly address the RAW quantitative data that indicates a HIGH
+> FAN-IN risk flag with 25 unique senders, which is clearly stated to be above the threshold of 20.
+> The Analyst mentions the fan-in but does not provide a robust explanation regarding the implications
+> of this specific raw data finding."
+> Citation: *"Raw data shows Fan-In=25 which triggers a HIGH risk flag, exceeding the threshold of
+> 20, but Analyst's report insufficiently justifies the medium risk score of 65."*
+
+**DISMISSAL — C9986 (FP Control Innocent):**
+> "The Analyst's report did not adequately address the absence of a clear connection between the
+> client's financial activities and the legitimate business activities suggested in the news articles.
+> While the Analyst noted complexity in the transactions, they failed to acknowledge the critical
+> lack of evidence linking the transactions to the project management profession."
+
+**MIXED — C1941 (FP Structurer):**
+> "The Analyst fails to fully address all relevant risk flags... While the average transaction amount
+> is correctly noted as exceeding the $1,000 threshold... the Analyst did not adequately account for
+> the claims made in the news articles."
+> Citation: *"Raw data shows Avg Amount = $1,160.42 prompting a risk flag, but Analyst does not
+> adequately explain the implications of high patient throughput and audit scrutiny as detailed in
+> Article 2."*
+
+---
+
 ## 6. Output Files
 
 | File | Contents |
