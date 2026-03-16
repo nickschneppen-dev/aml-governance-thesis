@@ -4,12 +4,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**Multi-Agent AML Governance Thesis** — Compares three governance patterns in an agentic system for Anti-Money Laundering (AML) analysis:
+**Multi-Agent AML Governance Thesis** — Compares four governance patterns in an agentic system for Anti-Money Laundering (AML) analysis:
 1. **Intrinsic Self-Correction** — Analyst reviews its own reasoning (baseline)
 2. **Hierarchical Auditor** — Dedicated independent Auditor reviews the Analyst
-3. **Context-Engineered** — Intrinsic + Kayba-generated Context Playbook injected into the Analyst's system prompt
+3. **Context-Engineered** — Intrinsic + Kayba-generated Context Playbook injected into the self-review step
+4. **LLM-Context** — Intrinsic + rules synthesised by the LLM itself from its own training traces
 
-The thesis question: does external context injection (Kayba) close the gap between self-correction and independent auditing?
+The thesis question: does external context injection (Kayba) close the gap between self-correction and independent auditing? And how does LLM-synthesised context compare to externally-generated context?
 
 ## Architecture
 
@@ -23,7 +24,7 @@ LangGraph multi-agent system with the following agents:
 
 - **Python 3.13** with virtual environment (`.venv`)
 - **LangGraph** — agent orchestration and state management
-- **LangChain / langchain-openai** — LLM integration (OpenAI)
+- **LangChain / langchain-openai** — LLM integration (OpenAI and xAI/Grok)
 - **Pandas** — data tools for transaction/financial analysis
 - **Langfuse** — observability and metrics collection
 - **MLflow** — experiment tracking and grading runs
@@ -38,14 +39,14 @@ source .venv/Scripts/activate  # Windows Git Bash
 pip install -r requirements.txt
 ```
 
-## Dataset Design (n=50 per split)
+## Dataset Design
 
 Two separate datasets are generated from `AMLNet_August 2025.csv` (~1.09M transactions, 10k users):
 
-- **Train set** — used to generate Kayba training traces. Different clients from test.
-- **Test set** — used for final evaluation of all 3 governance modes.
+- **Test set** (n=168): 60 guilty / 108 innocent — used for final evaluation of all 4 governance modes.
+- **Train set** (n=86): 34 guilty / 52 innocent — used to generate Kayba training traces and LLM-context rules. Different clients from test.
 
-Both sets have the same group structure (22 guilty / 28 innocent) and the same KB article templates, but different AMLNet client IDs.
+Both sets have the same group structure and KB article templates, but different AMLNet client IDs.
 
 ### Generating datasets
 
@@ -59,8 +60,8 @@ python 01_build_dataset.py --dataset train   # requires test_client_list.csv
 
 | File | Accessible to agents? | Contents |
 |---|---|---|
-| `{prefix}transactions.csv` | No (too large; metrics are pre-computed) | Raw transaction rows for the 50 selected users |
-| `{prefix}knowledge_base.json` | Via tool only | Mock "internet" (101 articles across 50 clients) |
+| `{prefix}transactions.csv` | No (too large; metrics are pre-computed) | Raw transaction rows for selected users |
+| `{prefix}knowledge_base.json` | Via tool only | Mock "internet" (articles across all clients) |
 | `{prefix}client_list.csv` | Via tool only | Client IDs only — no groups, labels, or scores |
 | `{prefix}client_metrics.json` | Via tool only | Pre-computed fan_in/fan_out/volume/avg_amount/tx_count from the full 1.09M-row dataset |
 | `{prefix}ground_truth.csv` | **NO — evaluation only, never during a run** | Full answer key (group, trap_subtype, is_money_laundering, expected_risk_score, rationale) |
@@ -89,8 +90,8 @@ Controls get consistent signals: Guilty = 2 adverse articles, Innocent = 2 benig
 
 | Group | n | Truth | Selection |
 |---|---|---|---|
-| **A – Control Guilty** | 8 | GUILTY | `isMoneyLaundering=1`, top by volume. Shell Company + adverse media. |
-| **B – Control Innocent** | 8 | INNOCENT | `isMoneyLaundering=0`, bottom-quartile volume. Individual + neutral news. |
+| **A – Control Guilty** | 16 (test) / 8 (train) | GUILTY | `isMoneyLaundering=1`, top by volume. Shell Company + adverse media. |
+| **B – Control Innocent** | 16 (test) / 8 (train) | INNOCENT | `isMoneyLaundering=0`, bottom-quartile volume. Individual + neutral news. |
 
 ### Group C – False Positive Traps (looks guilty, IS innocent)
 
@@ -98,10 +99,12 @@ Each targets a different AML red flag. One article provides a legitimate explana
 
 | Sub-group | n | Red Flag Mimicked | Alibi Entity |
 |---|---|---|---|
-| **C1 – Charity** | 5 | High fan-in (~25 unique senders) mimics collection hub | Registered NGO (+ ACNC reviews, governance questions) |
-| **C2 – Payroll** | 5 | High fan-out (~107 unique recipients) mimics layering | Business (+ Fair Work investigations, ABF inspections) |
-| **C3 – High Roller** | 5 | Volume (~$232k) rivals guilty-group throughput | Casino/IPO/mining (+ junket scrutiny, ASIC monitoring) |
-| **C4 – Structurer** | 5 | High avg txn (~$1,157) mimics structured deposits | Vending/medical/dealer (+ ATO cash-business blitz, AUSTRAC reminders) |
+| **C1 – Charity** | 23 (test) / 12 (train) | High fan-in (~25 unique senders) mimics collection hub | Registered NGO (+ ACNC reviews, governance questions) |
+| **C2 – Payroll** | 23 (test) / 12 (train) | High fan-out (~107 unique recipients) mimics layering | Business (+ Fair Work investigations, ABF inspections) |
+| **C3 – High Roller** | 23 (test) / 12 (train) | Volume (~$232k) rivals guilty-group throughput | Casino/IPO/mining (+ junket scrutiny, ASIC monitoring) |
+| **C4 – Structurer** | 23 (test) / 12 (train) | High avg txn (~$1,157) mimics structured deposits | Vending/medical/dealer (+ ATO cash-business blitz, AUSTRAC reminders) |
+
+Note: C4 exhausts the full AMLNet pool (23+12=35 qualifying clients total).
 
 ### Group D – False Negative Traps (looks innocent, IS guilty)
 
@@ -109,8 +112,8 @@ Confirmed launderers whose **quantitative data is unremarkable**. Each gets a be
 
 | Sub-group | n | Deceptive Pattern | Buried Signal |
 |---|---|---|---|
-| **D1 – Sleeper** | 7 | Vol/fan-in/fan-out statistically identical to Control Innocent | Terror financing, hawala, proliferation, bribery, immigration fraud, tax evasion, Interpol Red Notice |
-| **D2 – Smurf** | 7 | High fan-in + small avg amounts looks like student/gig worker | Campus mule rings, gig-economy fronts, scam funnelling, social media recruitment, court convictions |
+| **D1 – Sleeper** | 22 (test) / 11 (train) | Vol/fan-in/fan-out statistically identical to Control Innocent | Terror financing, hawala, proliferation, bribery, immigration fraud, tax evasion, Interpol Red Notice |
+| **D2 – Smurf** | 22 (test) / 11 (train) | High fan-in + small avg amounts looks like student/gig worker | Campus mule rings, gig-economy fronts, scam funnelling, social media recruitment, court convictions |
 
 The Sleepers are the hardest test: avg volume $33k vs Control Innocent $29k — indistinguishable from transaction data alone.
 
@@ -127,7 +130,8 @@ The Sleepers are the hardest test: avg volume $33k vs Control Innocent $29k — 
 - **Intrinsic Mode (Baseline):** The Analyst reviews its own draft. We hypothesise it will succumb to "Confirmation Bias" (sticking to its initial finding).
 - **Hierarchical Mode:** The Auditor Agent acts as a "Compliance Officer."
   - **The "Trusted Tool" Pattern:** The Auditor compares the Analyst's report against the **raw output from the Tools**. If the Tool output says "Fan-In: 50" but the Analyst says "No suspicious network activity," the Auditor **MUST** reject the report.
-- **Context-Engineered Mode:** Intrinsic governance + Kayba's Context Playbook injected into the Analyst's system prompt under a `<Context_Playbook>` XML tag. The Analyst still self-reviews, but its reasoning is guided by patterns learned from past errors. The experimental variable is the Analyst's prompt, not the reviewer.
+- **Context-Engineered Mode:** Intrinsic governance + Kayba's Context Playbook appended to the self-review user message under a `<Context_Playbook>` XML tag. The Analyst's initial report is identical to intrinsic — only the reviewer's guidance differs.
+- **LLM-Context Mode:** Same as context_engineered, but the rules are synthesised by the LLM itself from its own training traces (via `05_generate_llm_context_rules.py`) rather than Kayba's external pipeline.
 
 ### 3. Data Integrity
 - The `tool_analyze_transactions` function is the **Source of Truth**. Its calculations (Volume, Fan-In, Fan-Out, Avg Amount) are final and indisputable facts within the simulation.
@@ -182,7 +186,7 @@ Calibrated to the benchmark data distribution. Flags are informational — agent
 - `forensics_scout_node` — Calls `tool_analyze_transactions`, stores raw output. Deterministic to avoid anchoring bias on the Analyst.
 - `finalise_node` — Copies approved output to `final_output`. Uses reviewer's adjusted score if APPROVE + score differs.
 
-**LLM-powered (all use `get_llm()` → `ChatOpenAI`, default `gpt-4o-mini`):**
+**LLM-powered (all use `get_llm()` → `ChatOpenAI`, default `gpt-4o-mini`; xAI/Grok supported via `grok-` prefix detection):**
 - `news_scout_node` — Calls `tool_search_news`, then LLM extracts facts into `NewsSummary`. Facts-only constraint: no opinions, no risk judgments.
 - `analyst_node` — Synthesises forensics + news into `AnalystOutput`. System prompt contains AML domain knowledge (threshold interpretations, "no flags ≠ clean" rule).
 - `self_review_node` — Analyst reviews own work (intrinsic/context-engineered governance).
@@ -193,7 +197,7 @@ Calibrated to the benchmark data distribution. Flags are informational — agent
 
 **Critical design decisions:**
 - Both review nodes call `_build_review_context()` which provides identical data (analyst output + raw forensics + raw news + news summary). The ONLY difference between intrinsic and hierarchical is the system prompt persona.
-- `get_llm()` returns the same model for all agents (`LLM_MODEL` env var, default `gpt-4o-mini`). The sole experimental variable is governance structure (or prompt augmentation for context-engineered).
+- `get_llm()` returns the same model for all agents (`LLM_MODEL` env var, default `gpt-4o-mini`). Models prefixed `grok-` are routed to xAI's API (`XAI_API_KEY`, `XAI_BASE_URL`). The sole experimental variable is governance structure (or prompt augmentation for context-engineered/llm_context).
 
 ## Graph (`graph.py`)
 
@@ -202,26 +206,29 @@ Calibrated to the benchmark data distribution. Flags are informational — agent
 **Flow:** `dispatch → [forensics_scout ‖ news_scout] → analyst → review → [conditional] → finalise | revision → review`
 
 - Scouts run in parallel (dispatch fans out, analyst joins when both complete)
-- The review node is `self_review_node` (intrinsic, context_engineered) or `auditor_node` (hierarchical)
+- The review node is `self_review_node` (intrinsic, context_engineered, llm_context) or `auditor_node` (hierarchical)
 - `_should_revise()` conditional edge: if REJECT and `revision_count < MAX_REVISIONS` (2), route to revision; otherwise finalise
-- For `context_engineered`: reads `external_agent_injection.txt` at build time and passes it to `make_analyst_node()` and `make_revision_node()`
+- `_model_artefact_path(prefix)` resolves model-specific artefact files: tries `{prefix}_{model}.txt` first, falls back to `{prefix}.txt`
+- For `context_engineered`: reads `external_agent_injection_{model}.txt` and passes to `make_self_review_node()`
+- For `llm_context`: reads `llm_context_rules_{model}.txt` and passes to `make_self_review_node()`
 
 ```python
 from graph import build_graph
-app = build_graph("intrinsic")          # or "hierarchical" / "context_engineered"
+app = build_graph("intrinsic")          # or "hierarchical" / "context_engineered" / "llm_context"
 result = app.invoke({"client_id": "C1234", "revision_count": 0})
 ```
 
-`context_engineered` mode raises `FileNotFoundError` if `external_agent_injection.txt` is not present. Run the Kayba pipeline first.
+`context_engineered` raises `FileNotFoundError` if `external_agent_injection_{model}.txt` is not present.
+`llm_context` raises `FileNotFoundError` if `llm_context_rules_{model}.txt` is not present.
 
 ## Experiment Runner (`02_run_experiment.py`)
 
-Runs all 50 clients through one or more governance modes and saves results incrementally.
+Runs all clients through one or more governance modes and saves results incrementally.
 
 ```bash
-python 02_run_experiment.py                                          # test set, intrinsic + hierarchical
-python 02_run_experiment.py --dataset train --modes intrinsic        # train set for Kayba traces
-python 02_run_experiment.py --dataset test --modes context_engineered  # after Kayba step
+python 02_run_experiment.py --dataset test --modes intrinsic hierarchical context_engineered llm_context
+python 02_run_experiment.py --dataset train --modes intrinsic        # train set for trace export
+python 02_run_experiment.py --model grok-4 --dataset test --modes intrinsic hierarchical context_engineered llm_context
 python 02_run_experiment.py --force                                  # re-run from scratch
 ```
 
@@ -243,28 +250,45 @@ results/
 
 **Multiple runs for variance:** Use `--run-id` to separate replicates. Use `--model` to separate model conditions. Each combination gets its own directory and summary CSV.
 
-**Resumability:** Skips clients already in summary.csv. Use `--force` to wipe and restart.
+**Resumability:** Skips clients where ALL requested modes are complete in summary.csv. A client with partial mode data (e.g. only intrinsic) is NOT skipped — it will be reprocessed for missing modes. Use `--force` to wipe and restart.
 
 **Error isolation:** Each mode invocation is try/except. Errors save `{"client_id": "...", "error": "..."}` to JSON and write `ERROR` to the CSV row.
 
 ## Trace Export & Kayba Integration (`04_export_traces.py`)
 
-Bridges this system and Kayba's Agentic Context Engine. Runs **outside** the main experiment loop — called manually after Step 3.
+Bridges this system and Kayba's Agentic Context Engine. Runs **outside** the main experiment loop — called manually after the train run.
 
 ```bash
 python 04_export_traces.py
-# defaults: --results-dir results/train/run_1/intrinsic
+# defaults: --results-dir results/train/gpt-4o-mini/run_1/intrinsic
 #           --ground-truth train_ground_truth.csv
 #           --output-dir training_traces
+# For a different model:
+python 04_export_traces.py --results-dir results/train/grok-4/run_1/intrinsic --output-dir training_traces_grok-4
 ```
 
-Reads AgentState JSONs from the results directory and ground truth CSV, then writes one annotated `.md` file per client to `training_traces/`. Each `.md` contains:
+Reads AgentState JSONs from the results directory and ground truth CSV, then writes one annotated `.md` file per client to the output dir. Each `.md` contains:
 - Classification metadata (CORRECT/INCORRECT, agent score vs ground truth, group)
 - Full forensics output, raw news articles, News Scout extractions
 - Analyst reasoning and review decision
 - Ground truth rationale
 
-**The `training_traces/` folder is what you feed to Kayba.** Kayba's `agentic_system_prompting.py` reads those `.md` files and outputs `external_agent_injection.txt`. Copy that file to the project root before running `context_engineered` mode.
+**Use model-specific output dirs** (`training_traces_{model}/`) to avoid mixing traces across models. The output dir is what you feed to Kayba and `05_generate_llm_context_rules.py`.
+
+## LLM-Context Rule Generation (`05_generate_llm_context_rules.py`)
+
+Synthesises generalizable AML reasoning rules from training traces by prompting the LLM to analyse its own past errors and successes.
+
+```bash
+# Uses LLM_MODEL env var, outputs llm_context_rules_{model}.txt
+python 05_generate_llm_context_rules.py
+# Explicit model and traces dir:
+LLM_MODEL=grok-4 python 05_generate_llm_context_rules.py --traces-dir training_traces_grok-4
+```
+
+- Output filename defaults to `llm_context_rules_{model}.txt` (model-specific)
+- xAI/Grok models routed to xAI API automatically (same `grok-` prefix detection as `agents.py`)
+- **Rule quality depends on training error density**: near-zero training errors (e.g. grok-4: 2/86) produce poorly calibrated rules — the synthesis lacks failure signal
 
 ## Full Experiment Workflow
 
@@ -273,23 +297,30 @@ Reads AgentState JSONs from the results directory and ground truth CSV, then wri
 python 01_build_dataset.py --dataset test
 python 01_build_dataset.py --dataset train
 
-# 2. Run intrinsic mode on TRAIN set → get traces for Kayba
-python 02_run_experiment.py --dataset train --modes intrinsic
+# 2. Run intrinsic mode on TRAIN set → traces for artefact generation
+python 02_run_experiment.py --dataset train --modes intrinsic   # uses LLM_MODEL env var
 
-# 3. Export traces for Kayba
-python 04_export_traces.py --results-dir results/train/intrinsic \
-                           --ground-truth train_ground_truth.csv
+# 3. Export traces (use model-specific output dir)
+python 04_export_traces.py \
+  --results-dir results/train/{model}/run_1/intrinsic \
+  --ground-truth train_ground_truth.csv \
+  --output-dir training_traces_{model}
 
-# 4. Run Kayba (outside this system)
-#    python agentic_system_prompting.py training_traces/
-#    → produces external_agent_injection.txt
-#    Copy external_agent_injection.txt to project root.
+# 4a. Generate LLM-context rules (from traces)
+LLM_MODEL={model} python 05_generate_llm_context_rules.py --traces-dir training_traces_{model}
+# → produces llm_context_rules_{model}.txt
 
-# 5. Run all 3 modes on TEST set
-python 02_run_experiment.py --dataset test --modes intrinsic hierarchical context_engineered
+# 4b. Run Kayba externally (separate project: C:/Dev/Kayba/)
+#    python agentic_system_prompting.py training_traces_{model}/ --model {model} --output-dir C:/Dev/Thesis
+#    → produces external_agent_injection_{model}.txt
+
+# 5. Run all 4 modes on TEST set
+python 02_run_experiment.py --dataset test \
+  --modes intrinsic hierarchical context_engineered llm_context \
+  --model {model}
 
 # 6. Evaluate
-python 03_evaluate.py --dataset test
+python 03_evaluate.py --dataset test --model {model}
 mlflow ui   # → http://localhost:5000, select runs → Compare
 ```
 
@@ -344,6 +375,7 @@ pip install -r requirements.txt
 
 **Required env vars:** `OPENAI_API_KEY`
 **Optional env vars:** `LLM_MODEL` (default: `gpt-4o-mini`), `LANGFUSE_SECRET_KEY`, `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_HOST`
+**xAI/Grok env vars:** `XAI_API_KEY`, `XAI_BASE_URL` (default: `https://api.x.ai/v1`) — required when `LLM_MODEL` starts with `grok-`
 
 ## Coding Standards
 
