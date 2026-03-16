@@ -1,0 +1,59 @@
+[Rule 1]: When quantitative metrics show a high average transaction amount exceeding thresholds, prioritize qualitative evidence of legitimate high-ticket business operations to downgrade risk, unless adverse intelligence directly contradicts it.
+Applies when: Average transaction amounts are flagged as high (e.g., >$1,000) but total volume and other metrics remain low, mimicking structuring patterns.
+Rationale: In incorrect false positive cases, the agent under-weighted qualitative alibis explaining high averages as normal for cash-intensive businesses and speculated on unverified mitigations, leading to an inflated score; correct structurer trap cases succeeded by using knowledge base explanations to resolve apparent contradictions and downgrade appropriately.
+
+[Rule 2]: Escalate risk to high levels when transaction topology (e.g., moderate fan-in and fan-out with small amounts) matches patterns described in sector-wide adverse warnings about mule networks, even if no quantitative flags are triggered and no direct client link exists.
+Applies when: Fan-in is moderately high (e.g., 15-19) with small average amounts (<$1,000) and multiple recipients, resembling peer-to-peer or gig activity, combined with qualitative warnings on sector vulnerabilities like student or gig worker exploitation.
+Rationale: In incorrect false negative cases, the agent treated sector-wide scam warnings as mere caution without sufficient escalation, resulting in a medium score despite pattern matches; correct smurf trap cases succeeded by synthesizing topology with qualitative triggers to flag high risk, overriding clean metrics.
+
+[Rule 3]: Override unremarkable or low-risk quantitative metrics with high risk escalation when adverse qualitative intelligence from authoritative sources (e.g., law enforcement) alleges involvement in serious crimes like fraud, trafficking, or sanctions evasion, treating positive portrayals as potential covers.
+Applies when: Metrics show low volume, no flags, and normal patterns (e.g., total volume <$200,000, fan-in/out below thresholds), but adverse news specifically implicates financial misconduct.
+Rationale: Correct sleeper trap cases demonstrated success by prioritizing authoritative adverse claims over benign quantitative data and conflicting positive articles, correctly flagging high risk; this pattern prevents false negatives where clean metrics hide illicit activity.
+
+[Rule 4]: Downgrade risk when high fan-in metrics are explained by legitimate donation patterns in registered charities, weighing specific entity alibis over general sector scrutiny unless adverse findings target the entity.
+Applies when: Fan-in exceeds thresholds (e.g., >20) with low average amounts and volume, mimicking collection hubs, but qualitative evidence confirms NGO status and donor funding.
+Rationale: Correct charity trap cases succeeded by using knowledge base alibis to mitigate fan-in flags, resulting in low scores; this avoids false positives by recognizing legitimate high-sender patterns without over-relying on non-specific sector concerns.
+
+[Rule 5]: Mitigate high fan-out risk flags by identifying legitimate payroll or vendor payment explanations in business operations, downgrading unless adverse intelligence indicates exploitation or non-compliance specific to the entity.
+Applies when: Fan-out exceeds thresholds (e.g., >80) with moderate transaction counts and low averages, resembling layering, but qualitative data describes workforce or supplier distributions.
+Rationale: Correct payroll trap cases effectively downgraded by linking fan-out to documented business models like staffing or contracting, outweighing general industry audits; this pattern corrects over-weighting of isolated flags in false positive scenarios.
+
+[Rule 6]: Treat high transaction volumes or turnovers as low risk when qualitative evidence confirms a legitimate high-turnover business (e.g., importers, casinos, or developers), downgrading flags unless adverse news directly implicates the entity in laundering.
+Applies when: Total volume approaches or is near thresholds (e.g., ~$190,000-$199,000) with high fan-out or counts, mimicking laundering throughput, but articles detail compliant operations.
+Rationale: Correct high-roller trap cases succeeded by using knowledge base alibis to explain volume as normal business activity, leading to low or medium scores; this prevents false positives by not over-escalating on metrics alone without specific adverse ties.
+
+[Rule 7]: Resolve apparent mathematical contradictions between quantitative metrics and qualitative claims by seeking verifiable alibis in the knowledge base, avoiding unsupported speculations that downplay discrepancies.
+Applies when: Metrics (e.g., low average amounts or totals) conflict with article descriptions of high-value activities (e.g., vehicle sales or event contracts), suggesting underreporting.
+Rationale: In incorrect false positive cases, the agent introduced unbacked speculations (e.g., mix of small and large transactions) to mitigate contradictions, failing to fully escalate or resolve them; correct cases across traps succeeded by grounding resolutions in provided evidence without speculation.
+
+[Rule 8]: Prioritize adverse qualitative intelligence from credible sources (e.g., police, regulators) over positive or general articles when they conflict, escalating risk especially in low-volume cases designed to evade detection.
+Applies when: Conflicting articles present benign (e.g., community involvement) versus adverse (e.g., fraud allegations) narratives, with metrics showing no flags.
+Rationale: Correct false negative trap cases (sleeper and smurf) consistently weighed authoritative adverse news as decisive, overriding positive portrayals; this addresses under-weighting in error cases where sector risks were not escalated sufficiently.
+
+[Rule 9]: Do not discount sector-wide adverse warnings as mere caution; escalate if transaction patterns align closely, even without entity-specific links, to avoid false negatives in vulnerable demographics like students or gig workers.
+Applies when: Metrics show sub-threshold but patterned activity (e.g., multiple small inflows/outflows) matching warnings about recruitment into illicit networks.
+Rationale: The incorrect false negative case under-escalated a sector warning despite pattern matches, scoring medium instead of high; correct smurf cases succeeded by treating alignments as sufficient for escalation, synthesizing quant and qual effectively.
+
+[Rule 10]: In cash-intensive sectors, confirm legitimate explanations for flagged metrics (e.g., high averages) through specific business details like pricing models or deposit practices, downgrading risk absent direct adverse evidence.
+Applies when: High average transaction flags occur in sectors like retail, hospitality, or services, with qualitative claims of high-ticket items or daily deposits.
+Rationale: Correct structurer trap cases downgraded by verifying alibis like fee structures or sales volumes, avoiding over-escalation; this counters the error pattern of unresolved contradictions leading to false positives.
+
+[Rule 11]: Escalate to high risk when adverse news describes deliberate low-volume strategies to avoid thresholds, regardless of clean quantitative profiles, to capture sophisticated evasion tactics.
+Applies when: Metrics are unremarkable (e.g., no flags, low totals) but adverse intelligence alleges evasion through small, frequent transactions.
+Rationale: Correct sleeper trap cases flagged high risk by recognizing evasion patterns in qual evidence, overriding quant data; this prevents false negatives seen in errors where low metrics were over-weighted as mitigating factors.
+
+[Rule 12]: Weigh general sector scrutiny (e.g., audits or reviews) as low-impact unless it includes specific adverse findings or pattern matches to the entity's metrics, avoiding unnecessary escalation in false positive traps.
+Applies when: Articles discuss industry-wide issues like compliance checks without naming the entity, alongside flagged metrics explained by legitimate operations.
+Rationale: Correct false positive cases (e.g., payroll, charity) succeeded by downplaying non-specific scrutiny in favor of entity alibis; this avoids over-weighting generics, as seen in some medium scores but still approved as innocent.
+
+[Rule 13]: Synthesize quantitative topology (e.g., fan-in/out ratios) with qualitative triggers for mule risks, escalating if they align, even if individually below thresholds.
+Applies when: Moderate fan-in (e.g., 15-19) and fan-out (e.g., 30-70) with small amounts, combined with warnings about structuring or forwarding in vulnerable sectors.
+Rationale: Correct smurf trap cases flagged guilty by integrating patterns despite no flags; the incorrect false negative failed this synthesis, treating metrics as fully mitigating.
+
+[Rule 14]: Avoid anchoring scores on the absence of quantitative flags alone; always cross-reference with qualitative evidence to detect hidden risks in false negative scenarios.
+Applies when: No risk flags are triggered, but qualitative articles include adverse intelligence or sector vulnerabilities.
+Rationale: In error false negative cases, the agent over-relied on clean metrics to keep scores medium; correct false negative traps succeeded by not anchoring, instead escalating based on qual overrides.
+
+[Rule 15]: When discrepancies exist between reported claims (e.g., sales volumes) and metrics (e.g., totals), treat them as indicators of potential inconsistency unless fully resolved by verifiable context, escalating uncertainty in scoring.
+Applies when: Qualitative claims suggest higher activity (e.g., monthly sales) than metrics reflect, potentially indicating underreporting.
+Rationale: The incorrect false positive case acknowledged but did not fully escalate a clear mathematical mismatch, using speculation to balance; correct cases resolved similar tensions with evidence, preventing errors.

@@ -30,7 +30,9 @@ import itertools
 import json
 import os
 import sys
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 import pandas as pd
@@ -90,7 +92,7 @@ def _build_summary_columns(modes: list[str]) -> list[str]:
 
 
 def _load_completed_clients(summary_file: Path, modes: list[str]) -> set[str]:
-    """Return client IDs that completed successfully (at least one mode succeeded)."""
+    """Return client IDs that completed successfully for ALL requested modes."""
     if not summary_file.exists():
         return set()
     review_cols = [f"{MODE_PREFIX[m]}_review_decision" for m in modes]
@@ -98,8 +100,8 @@ def _load_completed_clients(summary_file: Path, modes: list[str]) -> set[str]:
         reader = csv.DictReader(f)
         completed = set()
         for row in reader:
-            # Keep client if any mode succeeded (not ERROR)
-            if any(row.get(col, "ERROR") != "ERROR" for col in review_cols):
+            # Only skip if ALL modes succeeded (not ERROR and not empty)
+            if all(row.get(col, "") not in ("", "ERROR") for col in review_cols):
                 completed.add(row["client_id"])
     return completed
 
@@ -170,14 +172,26 @@ def _create_langfuse_handler(client_id: str, mode: str):
 
 
 def _run_single(client_id: str, mode: str, app) -> dict:
-    """Invoke the graph for one client and return the final state."""
+    """Invoke the graph for one client, retrying on rate-limit errors."""
+    import openai
+
     handler = _create_langfuse_handler(client_id, mode)
     config = {"callbacks": [handler]} if handler else {}
-    result = app.invoke(
-        {"client_id": client_id, "revision_count": 0},
-        config=config,
-    )
-    return dict(result)
+
+    wait = 30
+    for attempt in range(4):  # up to 3 retries
+        try:
+            result = app.invoke(
+                {"client_id": client_id, "revision_count": 0},
+                config=config,
+            )
+            return dict(result)
+        except openai.RateLimitError as e:
+            if attempt == 3:
+                raise
+            print(f"       [rate limit] {client_id}/{mode} — waiting {wait}s (attempt {attempt + 1}/3)")
+            time.sleep(wait)
+            wait *= 2  # 30 → 60 → 120
 
 
 # ---------------------------------------------------------------------------
@@ -210,6 +224,14 @@ def main() -> None:
         default="1",
         help="Replicate identifier, used to separate multiple runs for variance "
              "measurement (default: 1). Results go to results/{dataset}/{model}/run_{run_id}/.",
+    )
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=3,
+        help="Number of clients to process in parallel (default: 3). "
+             "Increase for faster runs if your API rate limits allow; "
+             "reduce to 1 to disable parallelism.",
     )
     parser.add_argument(
         "--force",
@@ -271,7 +293,7 @@ def main() -> None:
         print("Langfuse tracing: disabled (set LANGFUSE_SECRET_KEY to enable)\n")
 
     prefix_note = f" (prefix: {dataset_prefix})" if dataset_prefix != f"{dataset}_" else ""
-    print(f"Dataset: {dataset}{prefix_note}  |  Model: {model}  |  Run: {run_id}  |  Modes: {', '.join(modes)}  |  Clients: {total}\n")
+    print(f"Dataset: {dataset}{prefix_note}  |  Model: {model}  |  Run: {run_id}  |  Modes: {', '.join(modes)}  |  Clients: {total}  |  Workers: {args.workers}\n")
 
     # Compile graphs once per mode
     apps: dict[str, object] = {}
@@ -280,33 +302,32 @@ def main() -> None:
         apps[mode] = build_graph(mode)
     print()
 
-    experiment_start = time.time()
+    csv_lock = threading.Lock()
+    counter_lock = threading.Lock()
     clients_run = 0
+    experiment_start = time.time()
 
-    for i, cid in enumerate(client_ids, 1):
-        if cid in completed:
-            continue
-
+    def _process_client(cid: str, position: int) -> None:
+        nonlocal clients_run
         client_start = time.time()
-        print(f"[{i:>2}/{total}] {cid}")
+        print(f"[{position:>3}/{total}] {cid}  starting")
 
         summaries: dict[str, dict] = {}
 
         for mode in modes:
-            p = MODE_PREFIX[mode]
             try:
                 state = _run_single(cid, mode, apps[mode])
                 _save_state(dataset, model, run_id, mode, cid, state)
                 s = _extract_summary(state)
                 print(
-                    f"       {mode:<22s} initial={s['initial_score']:>3}  "
+                    f"       {cid}  {mode:<22s} initial={s['initial_score']:>3}  "
                     f"final={s['score']:>3}  "
                     f"review={s['review_decision']:<7}  "
                     f"revisions={s['revision_count']}"
                 )
             except Exception as e:
                 err = str(e)
-                print(f"       {mode:<22s} ERROR - {err}")
+                print(f"       {cid}  {mode:<22s} ERROR - {err}")
                 _save_state(dataset, model, run_id, mode, cid, {"client_id": cid, "error": err})
                 s = {"initial_score": None, "score": None, "confidence": None,
                      "review_decision": "ERROR", "revision_count": 0,
@@ -326,25 +347,36 @@ def main() -> None:
             for n in range(1, MAX_REVISIONS + 1):
                 row[f"{p}_score_rev{n}"] = s.get(f"score_rev{n}")
 
-        # Pairwise deltas
         for m1, m2 in itertools.combinations(modes, 2):
             p1, p2 = MODE_PREFIX[m1], MODE_PREFIX[m2]
             s1, s2 = summaries[m1]["score"], summaries[m2]["score"]
             row[f"{p1}_{p2}_delta"] = (s2 - s1) if (s1 is not None and s2 is not None) else None
 
-        _append_summary_row(summary_file, summary_columns, row)
+        with csv_lock:
+            _append_summary_row(summary_file, summary_columns, row)
 
         elapsed = time.time() - client_start
-        clients_run += 1
+        with counter_lock:
+            clients_run += 1
+            done = clients_run
         total_elapsed = time.time() - experiment_start
-        avg_per_client = total_elapsed / clients_run
-        remaining = (total - len(completed) - clients_run) * avg_per_client
-
+        avg_per_client = total_elapsed / done
+        remaining = (total - len(completed) - done) * avg_per_client
         print(
-            f"       {elapsed:.1f}s  |  "
+            f"       {cid}  done  {elapsed:.1f}s  |  "
             f"avg {avg_per_client:.1f}s/client  |  "
             f"~{remaining / 60:.0f}m remaining\n"
         )
+
+    pending = [(cid, i) for i, cid in enumerate(client_ids, 1) if cid not in completed]
+    with ThreadPoolExecutor(max_workers=args.workers) as executor:
+        futures = {executor.submit(_process_client, cid, pos): cid for cid, pos in pending}
+        for future in as_completed(futures):
+            cid = futures[future]
+            try:
+                future.result()
+            except Exception as e:
+                print(f"[FATAL] {cid} — {e}")
 
     # ── Final summary ──
     total_elapsed = time.time() - experiment_start

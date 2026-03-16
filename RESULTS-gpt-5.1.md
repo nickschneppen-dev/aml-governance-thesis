@@ -257,37 +257,61 @@ critically engaged with, rather than genuinely verifying the analyst's argument 
 
 ## 6. Comparison with gpt-4o-mini Results
 
-The following table compares the gpt-5.1 results (n=168) against the corresponding gpt-4o-mini results
-(n=50 test set, same 4 modes). Dataset sizes differ, making direct numerical comparison approximate,
-but the directional findings are informative.
+Both models were tested on the identical n=168 test set (60 guilty, 108 innocent), enabling direct comparison.
 
-| Metric | gpt-4o-mini Intrinsic | gpt-5.1 Intrinsic | gpt-4o-mini LLM-Ctx | gpt-5.1 LLM-Ctx |
+### Classification Performance — All Four Modes
+
+| Metric | 4o-mini Int | 5.1 Int | 4o-mini Hier | 5.1 Hier | 4o-mini Ctx | 5.1 Ctx | 4o-mini LLM | 5.1 LLM |
+|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+| **Accuracy** | 47.6% | **92.3%** | 50.0% | **90.5%** | 48.8% | **95.2%** | 64.3% | **100%** |
+| **F1** | 0.54 | **0.883** | 0.59 | **0.855** | 0.56 | **0.929** | 0.66 | **1.000** |
+| False Positives | 80 | **2** | 84 | **3** | 81 | **0** | 58 | **0** |
+| False Negatives | 8 | **11** | **0** | 13 | 5 | **8** | **2** | 0 |
+| Range Accuracy | 30.4% | **55.4%** | 39.9% | **44.6%** | 32.1% | **94.0%** | 49.4% | **97.0%** |
+| MAE | 34.2 | **16.6** | 36.3 | **17.1** | 34.0 | **10.6** | 25.2 | **7.6** |
+
+### Per-Group Accuracy — Intrinsic Baseline Comparison
+
+| Group | n | gpt-4o-mini | gpt-5.1 | Delta |
 |---|:---:|:---:|:---:|:---:|
-| Classification Accuracy | 56.0% | **92.3%** | 95.9% | **100%** |
-| F1 Score | 0.633 | **0.883** | 0.952 | **1.000** |
-| False Positives | 19 | **2** | 0 | **0** |
-| False Negatives | 3 | **11** | 2 | **0** |
-| Score Range Accuracy | 42.0% | **55.4%** | 84.0% | **97.0%** |
-| MAE | 30.4 | **16.6** | 11.3 | **7.6** |
+| Control Guilty | 16 | 100% | 100% | = |
+| Control Innocent | 16 | 100% | 100% | = |
+| FP: Charity | 23 | 43% | **100%** | +57pp |
+| FP: Payroll | 23 | 0% | **100%** | +100pp |
+| FP: High Roller | 23 | 0% | **91%** | +91pp |
+| FP: Structurer | 23 | 9% | **100%** | +91pp |
+| FN: Sleeper | 22 | 77% | **91%** | +14pp |
+| FN: Smurf | 22 | **86%** | 59% | −27pp |
 
 **Key cross-model findings:**
 
-1. **Baseline capability:** gpt-5.1 intrinsic (F1=0.883) vastly outperforms gpt-4o-mini intrinsic
-   (F1=0.633). The FP failure modes that defined gpt-4o-mini results — Payroll 0%, High Roller 0%,
-   Structurer 0% — are resolved at the base model level in gpt-5.1.
+1. **Baseline capability gap is enormous.** gpt-5.1 intrinsic (F1=0.883) vastly outperforms gpt-4o-mini
+   intrinsic (F1=0.54). The entire FP failure mode that defines the gpt-4o-mini results — 0% on payroll,
+   0% on high roller, 9% on structurer — is resolved at the base model level in gpt-5.1. gpt-5.1
+   intrinsic alone outperforms gpt-4o-mini LLM-Context (F1=0.66), the best gpt-4o-mini mode.
 
-2. **Shifted failure mode:** gpt-5.1's primary failure is FN Smurf (59%), while gpt-4o-mini's primary
-   failures were FP traps. The improvement in base model capability shifts the error distribution
-   from systematic over-flagging to selective under-flagging on the hardest buried-signal cases.
+2. **The error distribution inverts across models.** gpt-4o-mini systematically over-flags (80 FPs, 8 FNs
+   in intrinsic). gpt-5.1 systematically under-flags on one specific pattern (2 FPs, 11 FNs in intrinsic
+   — driven by FN Smurf at 59%). The capability jump resolves the FP anchoring bias but reveals a
+   residual FN blind spot on the hardest buried-signal trap.
 
-3. **Rule injection still helps at gpt-5.1:** Despite a much stronger baseline, both context-engineered
-   and LLM-context still meaningfully improve results. The ceiling at gpt-5.1 intrinsic (92.3%) leaves
-   room for rule-injection gains that lead to perfect classification under LLM-Context.
+3. **Rule injection effects are capability-dependent.** At gpt-4o-mini, Kayba rules barely move the
+   needle (F1: 0.54→0.56); at gpt-5.1, they produce a strong improvement (F1: 0.883→0.929). LLM-Context
+   improves substantially at both capability levels (gpt-4o-mini: +0.12 F1; gpt-5.1: +0.117 F1), but
+   for different reasons: at gpt-4o-mini the rules correct systematic anchoring bias; at gpt-5.1 they
+   address a narrow FN Smurf blind spot.
 
-4. **Hierarchical architecture diverges across models:** At gpt-4o-mini, hierarchical achieved higher F1
-   via perfect recall but with severe FP inflation. At gpt-5.1, it underperforms intrinsic on both
-   precision and recall — the auditor became deferential rather than aggressive. This model-dependency
-   of the hierarchical effect is an important finding for the thesis.
+4. **Hierarchical architecture produces opposite failure modes at each model.** At gpt-4o-mini the
+   auditor over-escalates (84 FPs, 0 FNs, +13.4 avg score shift). At gpt-5.1 it under-intervenes
+   (3 FPs, 13 FNs, −0.6 avg score shift). Neither model achieves the idealised well-calibrated auditor.
+   The same architectural choice produces diametrically opposite error profiles — a central finding for
+   the thesis on governance robustness.
+
+5. **Context-engineered's low consensus rate is gpt-4o-mini specific.** At gpt-4o-mini: 17% consensus,
+   1.80 revisions, 6.6 calls/case. At gpt-5.1: 100% consensus, 0.65 revisions, 4.3 calls/case. The
+   Kayba rules act as an indiscriminate trigger at gpt-4o-mini but are applied selectively at gpt-5.1
+   — a direct capability-execution effect establishing where Kayba's generalised principles become
+   actionable.
 
 ---
 
@@ -322,7 +346,7 @@ profile — especially the FN Smurf gap. Both artefacts were derived from gpt-5.
 this a clean comparison of rule source (Kayba generalised skills vs LLM case-specific rules) without
 model mismatch confounds.
 
-The narrowing gap between Context-Engineered and LLM-Context at gpt-5.1 (from F1 gap of 0.320 at
+The narrowing gap between Context-Engineered and LLM-Context at gpt-5.1 (from F1 gap of 0.10 at
 gpt-4o-mini to 0.071 at gpt-5.1) is the central cross-model finding: as base model capability increases,
 the source of rules matters less. A stronger model can execute on Kayba's general principles more
 faithfully, reducing the advantage of highly specific, error-focused rules — except for the hardest trap

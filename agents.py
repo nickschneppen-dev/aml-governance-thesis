@@ -38,9 +38,20 @@ def get_llm(temperature: float = 1.0) -> ChatOpenAI:
     All agents share the same model to ensure the ONLY experimental variable
     is the governance structure (intrinsic vs. hierarchical), not model
     differences.
+
+    xAI (Grok) models are detected by the "grok-" prefix in LLM_MODEL.
+    Set XAI_API_KEY and optionally XAI_BASE_URL in .env to use xAI.
     """
+    model = os.getenv("LLM_MODEL", "gpt-4o-mini")
+    if model.startswith("grok-"):
+        return ChatOpenAI(
+            model=model,
+            temperature=temperature,
+            api_key=os.getenv("XAI_API_KEY"),
+            base_url=os.getenv("XAI_BASE_URL", "https://api.x.ai/v1"),
+        )
     return ChatOpenAI(
-        model=os.getenv("LLM_MODEL", "gpt-4o-mini"),
+        model=model,
         temperature=temperature,
     )
 

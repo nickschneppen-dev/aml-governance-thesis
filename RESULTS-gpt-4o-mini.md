@@ -1,4 +1,4 @@
-# Experiment Results: Multi-Agent AML Governance
+# Experiment Results: Multi-Agent AML Governance — gpt-4o-mini
 
 > **Thesis question:** Does external context injection (Kayba ACE) close the performance gap between
 > intrinsic self-correction and independent hierarchical auditing — at a fraction of the cost?
@@ -10,14 +10,14 @@
 
 | | |
 |---|---|
-| **Dataset** | AMLNet (1.09M transactions, 10k users) — 50 test clients, 50 train clients |
-| **Ground truth** | 22 guilty, 28 innocent per split |
+| **Dataset** | AMLNet (1.09M transactions, 10k users) — 168 test clients, 86 train clients |
+| **Ground truth** | 60 guilty, 108 innocent (test set) |
 | **Model** | `gpt-4o-mini` (identical across all four modes) |
 | **Classification threshold** | Score ≥ 50 → predicted GUILTY |
-| **Kayba training input** | 50 train traces (intrinsic mode, 37 correct / 13 incorrect) |
-| **Kayba output** | 28 deduplicated skills, 5.4 KB context playbook |
-| **LLM self-reflection input** | Same 50 train traces, rules synthesised by gpt-4o-mini itself |
-| **Errors** | C3891 (fp_trap:high_roller) failed in ctx mode; C6250 (fp_trap:high_roller) failed in llm_context mode. Both modes evaluated on 49/50 clients; fp_trap:high_roller group has 4/5 clients in those modes. |
+| **Kayba training input** | 86 train traces (intrinsic mode, gpt-4o-mini) |
+| **Kayba output** | 28 deduplicated skills, context playbook (`external_agent_injection_gpt-4o-mini.txt`) |
+| **LLM self-reflection input** | Same 86 train traces, rules synthesised by gpt-4o-mini (`llm_context_rules_gpt-4o-mini.txt`) |
+| **Errors** | None — all 168 clients completed successfully across all four modes |
 
 ### The Four Modes
 
@@ -25,8 +25,8 @@
 |---|---|---|---|
 | **Intrinsic** | Analyst reviews its own draft | None | Same LLM instance |
 | **Hierarchical** | Independent Auditor reviews the Analyst | None | Separate LLM agent with different system prompt |
-| **Context-Engineered** | Analyst + Kayba playbook in self-review user message | Kayba's 28-skill playbook | Same LLM instance |
-| **LLM-Context** | Analyst + LLM-synthesised rules in self-review user message | Self-generated rules from train traces | Same LLM instance |
+| **Context-Engineered** | Analyst + Kayba playbook injected into self-review | Kayba's 28-skill playbook | Same LLM instance |
+| **LLM-Context** | Analyst + LLM-synthesised rules injected into self-review | Self-generated rules from train traces | Same LLM instance |
 
 > **Architectural distinction:** Intrinsic, Context-Engineered, and LLM-Context share one growing context
 > window (analyst and reviewer are the same LLM call). Hierarchical uses a separate fresh context per audit.
@@ -44,43 +44,39 @@ Not all pairwise comparisons are methodologically valid. Each comparison isolate
 | Hierarchical vs Context-Engineered | **Confounded** — architecture *and* Kayba rules differ simultaneously | ❌ |
 | Hierarchical vs LLM-Context | **Confounded** — architecture *and* LLM rules differ simultaneously | ❌ |
 
-The data tables below include all four modes for reference. Findings and thesis implications are
-structured only around the four valid comparisons.
-
 ---
 
 ## 2. Core Results
 
 ### Classification Performance
 
-| Metric | Intrinsic | Hierarchical | Context-Eng (49) | LLM-Context (49) |
+| Metric | Intrinsic | Hierarchical | Context-Eng | LLM-Context |
 |---|:---:|:---:|:---:|:---:|
-| **Classification Accuracy** | 56.0% | 60.0% | 57.1% | **95.9%** |
-| **Precision** | 0.500 | 0.524 | 0.514 | **1.000** |
-| **Recall** | 0.864 | 1.000 | 0.818 | 0.909 |
-| **F1 Score** | 0.633 | 0.688 | 0.632 | **0.952** |
-| True Positives | 19 | 22 | 18 | 20 |
-| False Positives | 19 | 20 | 17 | **0** |
-| True Negatives | 9 | 8 | 10 | **27** |
-| False Negatives | 3 | 0 | 4 | 2 |
-
-*Context-Eng and LLM-Context are evaluated on 49 clients due to one error each (both in fp_trap:high_roller).*
+| **Classification Accuracy** | 47.6% | 50.0% | 48.8% | **64.3%** |
+| **Precision** | 0.39 | 0.42 | 0.40 | **0.50** |
+| **Recall** | 0.87 | **1.00** | 0.92 | 0.97 |
+| **F1 Score** | 0.54 | 0.59 | 0.56 | **0.66** |
+| True Positives | 52 | **60** | 55 | 58 |
+| False Positives | 80 | 84 | 81 | **58** |
+| True Negatives | 28 | 24 | 27 | **50** |
+| False Negatives | 8 | **0** | 5 | 2 |
 
 ### Score Accuracy
 
 | Metric | Intrinsic | Hierarchical | Context-Eng | LLM-Context |
 |---|:---:|:---:|:---:|:---:|
-| Range Accuracy (score within expected band) | 42.0% | 52.0% | 33.0% | **84.0%** |
-| MAE from midpoint | 30.4 | 30.9 | 31.2 | **11.3** |
+| Range Accuracy (score within expected band) | 30.4% | 39.9% | 32.1% | **49.4%** |
+| MAE from midpoint | 34.2 | 36.3 | 34.0 | **25.2** |
+| Avg Confidence | 81.5 | 81.9 | 82.4 | **83.8** |
 
 ### Governance Behaviour & Efficiency
 
 | Metric | Intrinsic | Hierarchical | Context-Eng | LLM-Context |
 |---|:---:|:---:|:---:|:---:|
-| Consensus Rate (reviewer approved) | 50% | 32% | 24% | 49% |
-| Avg Revisions per Case | 1.46 | 1.64 | 1.71 | 1.47 |
-| Avg LLM Calls per Case | 5.92 | 6.28 | 6.43 | 5.94 |
-| Avg Score Shift (final − initial) | +3.6 | +10.9 | −1.6 | **−12.1** |
+| Consensus Rate (reviewer approved) | 53% | 28% | 17% | 32% |
+| Avg Revisions per Case | 1.41 | 1.62 | **1.80** | 1.61 |
+| Avg LLM Calls per Case | 5.8 | 6.2 | **6.6** | 6.2 |
+| Avg Score Shift (final − initial) | +4.6 | **+13.4** | +5.2 | +3.1 |
 
 ---
 
@@ -90,300 +86,277 @@ structured only around the four valid comparisons.
 
 | Group | n | Truth | Intrinsic | Hierarchical | Context-Eng | LLM-Context |
 |---|:---:|:---:|:---:|:---:|:---:|:---:|
-| **Control Guilty** | 8 | GUILTY | ✅ 100% | ✅ 100% | ⚠️ 88% | ✅ 100% |
-| **Control Innocent** | 8 | INNOCENT | ✅ 100% | ⚠️ 75% | ⚠️ 88% | ✅ 100% |
-| **FP Trap: Charity** | 5 | INNOCENT | ⚠️ 20% | ⚠️ 20% | ⚠️ 60% | ✅ 100% |
-| **FP Trap: Payroll** | 5 | INNOCENT | ❌ 0% | ⚠️ 20% | ❌ 0% | ✅ 100% |
-| **FP Trap: High Roller** | 5 | INNOCENT | ❌ 0% | ❌ 0% | ❌ 0%† | ✅ 100%† |
-| **FP Trap: Structurer** | 5 | INNOCENT | ❌ 0% | ❌ 0% | ❌ 0% | ✅ 100% |
-| **FN Trap: Sleeper** | 7 | GUILTY | ⚠️ 71% | ✅ 100% | ⚠️ 71% | ✅ 100% |
-| **FN Trap: Smurf** | 7 | GUILTY | ⚠️ 86% | ✅ 100% | ⚠️ 86% | ⚠️ 71% |
+| **Control Guilty** | 16 | GUILTY | ✅ 100% | ✅ 100% | ⚠️ 94% | ✅ 100% |
+| **Control Innocent** | 16 | INNOCENT | ✅ 100% | ⚠️ 81% | ⚠️ 88% | ✅ 94% |
+| **FP Trap: Charity** | 23 | INNOCENT | ⚠️ 43% | ❌ 35% | ❌ 30% | ⚠️ 48% |
+| **FP Trap: Payroll** | 23 | INNOCENT | ❌ 0% | ❌ 9% | ❌ 13% | ⚠️ 52% |
+| **FP Trap: High Roller** | 23 | INNOCENT | ❌ 0% | ❌ 0% | ❌ 0% | ❌ 17% |
+| **FP Trap: Structurer** | 23 | INNOCENT | ❌ 9% | ❌ 4% | ❌ 13% | ❌ 35% |
+| **FN Trap: Sleeper** | 22 | GUILTY | ⚠️ 77% | ✅ 100% | ✅ 91% | ✅ 100% |
+| **FN Trap: Smurf** | 22 | GUILTY | ⚠️ 86% | ✅ 100% | ✅ 91% | ✅ 91% |
 
-*✅ = strong performance (≥80%)  ⚠️ = partial  ❌ = failure (<50%)*
-*† 4/5 clients evaluated in this group for ctx and llm_context (1 error each)*
+*✅ = strong performance (≥80%)  ⚠️ = partial (50–79%)  ❌ = failure (<50%)*
 
 ### Average Risk Score by Group
 
 | Group | Expected | Intrinsic | Hierarchical | Context-Eng | LLM-Context |
 |---|:---:|:---:|:---:|:---:|:---:|
-| Control Guilty | 70–100 | 81.0 | 83.1 | 75.0 | 75.0 |
-| Control Innocent | 0–30 | 21.9 | 33.1 | 23.1 | 16.9 |
-| FP: Charity | 0–30 | 57.0 | 55.0 | 43.0 | **12.0** |
-| FP: Payroll | 0–30 | 72.8 | 70.0 | 73.4 | **31.0** |
-| FP: High Roller | 0–30 | 74.0 | 91.0 | 76.3† | **31.3†** |
-| FP: Structurer | 0–30 | 72.0 | 75.0 | 66.0 | **20.0** |
-| FN: Sleeper | 70–100 | 60.7 | **73.6** | 52.1 | **85.0** |
-| FN: Smurf | 70–100 | 68.6 | **80.7** | 62.1 | 65.7 |
-
-*† 4/5 clients evaluated*
+| Control Guilty | 70–100 | 80.8 | **84.4** | 75.9 | 83.8 |
+| Control Innocent | 0–30 | **21.2** | 29.1 | 23.8 | 20.6 |
+| FP: Charity | 0–30 | 52.7 | 59.2 | 53.1 | **42.4** |
+| FP: Payroll | 0–30 | 68.7 | 79.1 | 69.7 | **50.2** |
+| FP: High Roller | 0–30 | 70.4 | 82.9 | 74.6 | **65.4** |
+| FP: Structurer | 0–30 | 64.5 | 69.4 | 59.8 | **50.0** |
+| FN: Sleeper | 70–100 | 60.9 | **77.3** | 66.4 | 83.2 |
+| FN: Smurf | 70–100 | 66.4 | **77.0** | 68.0 | 75.7 |
 
 ---
 
-## 4. What the Results Mean
+## 4. Reasoning Quality
+
+Two LLM judges score each case on a 1–10 scale:
+- **Evidence Coverage:** Does the reasoning cite specific metrics and article claims?
+- **Conclusion Consistency:** Does the reasoning support the final risk decision?
+
+| Metric | Intrinsic | Hierarchical | Context-Eng | LLM-Context |
+|---|:---:|:---:|:---:|:---:|
+| Evidence Coverage (mean) | 9.32 | **9.54** | 9.36 | 9.42 |
+| Evidence Coverage (min/max) | 6 / 10 | 6 / 10 | 8 / 10 | 6 / 10 |
+| Conclusion Consistency (mean) | 6.76 | **8.23** | 7.12 | 7.87 |
+| Conclusion Consistency (min/max) | 1 / 10 | 1 / 10 | 1 / 10 | 1 / 10 |
+
+**Key observation:** Evidence coverage is uniformly high (9.32–9.54) — gpt-4o-mini reliably cites available
+metrics and article content regardless of governance mode. This confirms the model engages substantively
+with the evidence; the failure to classify correctly is a reasoning and weighting problem, not an evidence
+retrieval problem.
+
+Conclusion consistency is more variable and lower overall (6.76–8.23). Hierarchical scores highest (8.23),
+which reflects an artefact of the audit structure: the auditor rewrites reasoning to justify its escalation
+decision, producing locally coherent argument chains even when the underlying decision is wrong. Intrinsic
+scores lowest (6.76), consistent with the model's tendency to issue high-confidence incorrect decisions on
+the FP traps without flagging internal tension in its reasoning.
+
+---
+
+## 5. What the Results Mean
 
 Findings are framed around the four valid pairwise comparisons identified in the comparison design above.
-Cross-comparisons involving Hierarchical vs Context-Engineered or Hierarchical vs LLM-Context are not
-drawn, as both the architecture and the injected content differ in those pairs.
 
-### Finding 1 [Intrinsic vs Hierarchical]: Hierarchical raises recall at a large precision cost
+### Finding 1 [Intrinsic vs Hierarchical]: Hierarchical achieves perfect recall but at severe FP cost
 
-Comparing the two no-rules conditions isolates the architectural variable: same-context self-review
-(intrinsic) vs separate-context independent auditor (hierarchical).
+Hierarchical achieves F1=0.59 vs intrinsic F1=0.54 — a marginal improvement driven entirely by perfect
+recall (0 FNs vs 8). But this comes at an extreme cost: 84 false positives vs intrinsic's 80. The
+hierarchical auditor flags every guilty client but cannot distinguish innocents: 84 of 108 innocent clients
+are incorrectly escalated.
 
-Hierarchical achieves perfect recall (1.000 vs 0.864) — it misses zero guilty clients, including all
-seven FN Sleepers (100%) and all seven FN Smurfs (100%). This represents the intended auditor behaviour:
-the independent reviewer refuses to let the analyst's conservative assessment stand. However, the cost is
-severe: 20 false positives vs 19 for intrinsic, for a net F1 of 0.688 vs 0.633. The improvement in recall
-(eliminating all FNs) is not enough to offset the systematic over-escalation: the auditor drives the
-average score upward by +10.9 points across all cases.
+The mechanism is clear from the per-group data: the hierarchical auditor scores FP groups almost as high
+as truly guilty clients (payroll avg 79.1, high roller avg 82.9, structurer avg 69.4). When confronted
+with legitimate businesses whose transaction patterns resemble money laundering, the auditor amplifies the
+Analyst's initial over-escalation (+13.4 avg score shift) rather than correcting it. The 0% consensus
+rate on payroll and near-zero rates on other FP traps confirm the auditor is nearly always REJECTing the
+analyst's initial assessment and demanding escalation.
 
-The over-escalation pattern is visible in the per-group scores: the hierarchical auditor pushes FP Payroll
-to 70.0, FP High Roller to 91.0, and FP Structurer to 75.0 — all deep into guilty territory for clients
-that are innocent. This is consistent with an auditor that interprets quantitative red flags as dispositive
-rather than rebuttable, and is not constrained by the cumulative article-based context that the analyst
-originally built up.
+The FN trap performance offers a counterpoint: hierarchical achieves 100% on both Sleeper and Smurf (vs
+77% and 86% for intrinsic). The independent auditor's aggressive escalation stance is exactly right for
+hidden guilty clients but catastrophically wrong for false positive traps. The two failure modes are
+structurally incompatible with a single escalation-biased auditor.
 
-Consensus rate (32%) and efficiency (6.28 LLM calls per case) confirm the pattern: the auditor rejects
-frequently, forces extensive revision cycles, and still ends at high risk scores because the analyst
-ultimately does not have grounds to override the auditor's demand for escalation.
+### Finding 2 [Intrinsic vs Context-Engineered]: Kayba injection has negligible net effect at gpt-4o-mini
 
-### Finding 2 [Intrinsic vs Context-Engineered]: Kayba injection provides marginal benefit on FP Charity but does not close larger gaps
+Context-engineered barely improves on intrinsic (F1: 0.56 vs 0.54, 5 FNs vs 8, but 81 FPs vs 80). The
+Kayba playbook, derived from 86 gpt-4o-mini training traces, does encode the right corrective direction —
+payroll accuracy improves from 0% to 13%, structurer from 9% to 13%, and FN Sleeper from 77% to 91%.
+But these marginal gains are swamped by a new problem: the context-engineered mode has the lowest
+consensus rate (17%) and highest avg revisions (1.80), meaning the injected rules are triggering constant
+REJECTs without producing correct assessments.
 
-Injecting Kayba's externally-derived playbook into the self-review step produces a mixed outcome at
-gpt-4o-mini. F1 falls very slightly (0.632 vs 0.633) — within noise — with one fewer TP (18 vs 19) and
-two fewer FPs (17 vs 19). The benefit is concentrated in FP Charity (60% vs 20%): the Kayba rules
-successfully transfer some recognition that NGO-style fan-in patterns can have legitimate explanations.
+The likely mechanism: the Kayba rules are being applied indiscriminately to all cases rather than
+selectively where they are relevant. The self-review prompt with rules increases the reviewer's critical
+sensitivity, causing it to reject even correct assessments. At gpt-4o-mini, the model lacks the reasoning
+precision to execute on Kayba's generalised principles selectively — it applies them as blanket rules.
 
-However, FP Payroll (0%), FP High Roller (0%), and FP Structurer (0%) remain total failures in both
-modes. The Kayba playbook does not generalise its charity-case learning to the other FP trap subtypes.
-FN Sleeper accuracy is unchanged (71% in both). Context-Engineered also produces a lower consensus rate
-than intrinsic (24% vs 50%) and the highest revision count (1.71 avg), indicating that the Kayba rules
-are triggering additional review cycles without resolving them productively.
+This is a capability-interaction finding: Kayba's 28-skill playbook requires a model with sufficient
+reasoning ability to apply each skill conditionally. At gpt-4o-mini, the rules become a blunt instrument.
 
-The average score shift is slightly negative (−1.6 vs +3.6 for intrinsic), confirming the rules do
-induce some downward pressure — but not enough to push FP Payroll, High Roller, or Structurer below the
-50-point classification threshold. At gpt-4o-mini capability, the Kayba playbook is too thin (5.4KB, 28
-skills) to overcome the model's strong initial over-scoring on quantitative red flags.
+### Finding 3 [Intrinsic vs LLM-Context]: LLM self-synthesis produces the largest improvement
 
-### Finding 3 [Intrinsic vs LLM-Context]: Self-synthesised rules produce a transformative improvement
+LLM-Context achieves F1=0.66 — the best result among all four modes — compared to intrinsic's F1=0.54.
+The improvement is driven by substantial FP reduction: 58 FPs vs 80 for intrinsic, and TN rises from 28
+to 50. MAE improves from 34.2 to 25.2.
 
-The same-architecture, same-injection-point comparison but replacing Kayba's rules with LLM-synthesised
-rules produces results qualitatively different from any other mode: F1=0.952, accuracy 95.9%, and
-precision 1.000 with zero false positives across 49 evaluated clients.
+The per-group data reveals what the self-synthesised rules are doing: payroll accuracy improves from 0%
+to 52% (avg score drops from 68.7 to 50.2), structurer from 9% to 35% (avg score 64.5→50.0), and charity
+from 43% to 48%. These are the groups where gpt-4o-mini was most systematically wrong, and the rules —
+synthesised from examples of those specific errors — directly target them.
 
-Every FP trap subtype is solved: charity (100%), payroll (100%), high roller (100%, 4/4 evaluated),
-structurer (100%). The average score for FP Payroll falls from 72.8 to 31.0; FP High Roller from 74.0 to
-31.3; FP Structurer from 72.0 to 20.0. The self-synthesised rules encode a consistent principle that
-quantitative red flags alone are insufficient when a legitimate business explanation appears in the
-knowledge base — and this principle transfers across all FP subtypes.
+However, LLM-Context still fails on high roller (17% accuracy, avg score 65.4), and FP performance
+remains far from solved. The rules reduce but do not eliminate the systematic over-escalation bias. The
+training traces capture the model's failure modes at n=86, but the 23-client-per-group FP traps in the
+test set expose patterns the rules do not fully generalise across.
 
-The trade-off: FN Smurf falls to 71% (vs 86% intrinsic) with two misses (C6018 score=35, C5350 score=40).
-The aggressive downward reviewer that clears FP traps also over-corrects for two confirmed smurfs whose
-transaction profiles have surface-level legitimacy. This is a precision-recall boundary condition: the
-rules that resolve all FPs are the same rules that occasionally over-clear a subtle FN.
+### Finding 4 [Context-Engineered vs LLM-Context]: LLM self-synthesis clearly outperforms Kayba at this capability level
 
-Average score shift of −12.1 (vs +3.6 intrinsic) quantifies the corrective force. Consensus rate (49%)
-and avg revisions (1.47) are nearly identical to intrinsic, suggesting the rules lead to decisive
-first-pass rejections rather than repeated inconclusive cycles.
+LLM-Context F1 (0.66) substantially exceeds Context-Engineered F1 (0.56). The gap is visible across
+every FP group: payroll 52% vs 13%, structurer 35% vs 13%, charity 48% vs 30%. LLM-Context produces 23
+fewer false positives (58 vs 81).
 
-### Finding 4 [Context-Engineered vs LLM-Context]: LLM self-synthesis dramatically outperforms Kayba extraction at gpt-4o-mini
+Both artefacts were derived from the same 86 gpt-4o-mini training traces. The difference reflects rule
+format and density: the LLM-synthesised rules are structured around specific error patterns — the exact
+reasoning failures gpt-4o-mini made during training. Kayba's 28-skill playbook extracts generalised
+principles ("prioritise qualitative context over quantitative flags") that are directionally correct but
+require the model to apply them flexibly. At gpt-4o-mini's capability level, the case-specific corrective
+language in the LLM rules is more actionable than Kayba's abstract principles.
 
-With architecture held constant, the source of rules is the isolated variable. At gpt-4o-mini, the
-difference is not narrow — it is decisive: F1=0.952 vs 0.632, accuracy 95.9% vs 57.1%, and 0 FPs vs 17.
-Kayba's playbook provides marginal improvement over intrinsic; LLM-Context transforms performance.
+The consensus rate comparison reinforces this: LLM-Context has 32% consensus (vs context-engineered's
+17%), meaning the LLM-synthesised rules produce fewer spurious REJECTs while still producing correct
+escalation decisions.
 
-Three factors likely explain the gap:
+### Finding 5 [Cross-cutting]: FP traps are the defining failure mode at gpt-4o-mini
 
-**Rule density and specificity.** The LLM-synthesised rules (~17KB) are roughly three times larger
-than Kayba's skillbook (~5.4KB, 28 deduplicated skills). More rules, each targeting a specific
-observed failure pattern, gives the self-reviewer a broader corrective vocabulary.
+The dominant pattern across all four modes is systematic false positive failure on FP trap groups. All
+92 FP-trap clients collectively generate between 58 and 84 false positives depending on mode. The three
+worst groups — payroll, high roller, structurer — account for 69 of 108 innocent clients and are near-
+total failures in intrinsic, hierarchical, and context-engineered modes.
 
-**Error-focused synthesis vs skill abstraction.** The synthesis prompt in
-`05_generate_llm_context_rules.py` explicitly structures the input around INCORRECT cases and
-CORRECT TRAP cases, asking the LLM to identify what went wrong and what worked. Kayba's ACE
-pipeline extracts generalised "skills" — reusable reasoning principles — which may be less
-directly targeted at the specific calibration failures the reviewer needs to correct. For
-gpt-4o-mini, which systematically over-flags quantitative red flags, targeted corrective rules
-matter more than generalised best practices.
+The failure pattern is consistent: gpt-4o-mini anchors on quantitative red flags (high fan-out, high
+volume, high avg amount) and fails to apply KB article context to rebut those flags. Intrinsic avg score
+of 68.7 for payroll clients — legitimate businesses with known innocent explanations — reflects a model
+that reads the qualifying evidence and then ignores it in its final score.
 
-**Training trace model alignment.** Both artefacts were derived from gpt-4o-mini training traces.
-In this run, unlike the gpt-5.1 run, there is no model mismatch: the LLM rules were synthesised
-by gpt-4o-mini itself from gpt-4o-mini traces, and the test agent is also gpt-4o-mini. The
-Kayba pipeline likewise encoded gpt-4o-mini failure patterns. The absence of a mismatch confound
-makes this comparison cleaner than the gpt-5.1 version — and the gap is even larger, suggesting
-that rule density and synthesis strategy are the dominant factors rather than model alignment.
+This is a qualitative reasoning failure, not an evidence retrieval failure: evidence coverage scores are
+9.32 (the model reads the articles) but conclusion consistency is 6.76 (the conclusion does not follow
+from the evidence cited). The gap between these two scores is diagnostic of anchoring bias.
 
-### Finding 5 [Cross-cutting]: LLM-Context solves all FP traps; intrinsic and ctx share a systematic quantitative bias
+### Finding 6 [Reasoning quality]: High evidence coverage with low conclusion consistency confirms anchoring
 
-At gpt-4o-mini, the persistent failure across intrinsic, hierarchical, and context-engineered is
-systematic over-scoring on quantitative red flags. All four FP trap subtypes sit at 0–20% accuracy
-for intrinsic/ctx/hier. The model anchors heavily on fan-in, fan-out, and volume thresholds and does
-not consistently allow legitimate knowledge-base explanations to overcome them.
+Evidence coverage (9.32–9.54 across modes) is high: gpt-4o-mini cites specific transaction metrics and
+KB article content in its reasoning. Conclusion consistency (6.76–8.23) is substantially lower: the
+final score often contradicts the agent's own cited evidence.
 
-LLM-Context is the only mode that breaks this pattern — and it does so completely. This suggests the
-failure is not in the analytical capacity of gpt-4o-mini per se, but in the absence of an explicit
-corrective prior. When the self-reviewer is equipped with rules synthesised directly from past
-over-flagging errors, the model can and does apply them.
+This gap is diagnostic. The model retrieves mitigating information but fails to apply it to update its
+initial quantitative assessment — it writes reasoning that acknowledges the legitimate business explanation
+and then issues a high risk score anyway. LLM-Context's improvement in conclusion consistency (7.87 vs
+6.76 for intrinsic) confirms the self-synthesised rules are partially correcting this pattern.
 
-FN Sleeper accuracy (71% for intrinsic and ctx) reflects a secondary limitation: the model sometimes
-fails to read past a benign cover profile and extract buried adverse signals from article body text. The
-hierarchical auditor resolves this (100%) by not carrying the analyst's anchored framing into the review
-step, but at the cost of 20 FPs elsewhere. LLM-Context also achieves 100% FN Sleeper accuracy — the
-corrective rules do not trade off against FN detection except for a modest smurf effect.
+Hierarchical's elevated conclusion consistency (8.23) is an artefact: the auditor rewrites reasoning to
+justify its escalation decision, producing locally coherent chains built around the wrong conclusion.
 
 ---
 
-## 5. Thesis Implications
+## 6. Comparison with gpt-5.1 Results
 
-Hypotheses are evaluated only against the valid pairwise comparisons. Hierarchical is not
-compared to Context-Engineered or LLM-Context because both the architecture and the injected
-knowledge differ in those pairs — no clean causal claim can be made.
+Both models were tested on the identical n=168 test set (60 guilty, 108 innocent), enabling direct comparison.
+
+### Classification Performance — All Four Modes
+
+| Metric | 4o-mini Int | 5.1 Int | 4o-mini Hier | 5.1 Hier | 4o-mini Ctx | 5.1 Ctx | 4o-mini LLM | 5.1 LLM |
+|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+| **Accuracy** | 47.6% | **92.3%** | 50.0% | **90.5%** | 48.8% | **95.2%** | 64.3% | **100%** |
+| **F1** | 0.54 | **0.883** | 0.59 | **0.855** | 0.56 | **0.929** | 0.66 | **1.000** |
+| False Positives | 80 | **2** | 84 | **3** | 81 | **0** | 58 | **0** |
+| False Negatives | 8 | **11** | **0** | 13 | 5 | **8** | **2** | 0 |
+| Range Accuracy | 30.4% | **55.4%** | 39.9% | **44.6%** | 32.1% | **94.0%** | 49.4% | **97.0%** |
+| MAE | 34.2 | **16.6** | 36.3 | **17.1** | 34.0 | **10.6** | 25.2 | **7.6** |
+
+### Per-Group Accuracy — Intrinsic Baseline Comparison
+
+| Group | n | gpt-4o-mini | gpt-5.1 | Delta |
+|---|:---:|:---:|:---:|:---:|
+| Control Guilty | 16 | 100% | 100% | = |
+| Control Innocent | 16 | 100% | 100% | = |
+| FP: Charity | 23 | 43% | **100%** | +57pp |
+| FP: Payroll | 23 | 0% | **100%** | +100pp |
+| FP: High Roller | 23 | 0% | **91%** | +91pp |
+| FP: Structurer | 23 | 9% | **100%** | +91pp |
+| FN: Sleeper | 22 | 77% | **91%** | +14pp |
+| FN: Smurf | 22 | **86%** | 59% | −27pp |
+
+**Key cross-model findings:**
+
+1. **Baseline capability gap is enormous.** gpt-5.1 intrinsic (F1=0.883) vastly outperforms gpt-4o-mini
+   intrinsic (F1=0.54). The entire FP failure mode that defines the gpt-4o-mini results — 0% on payroll,
+   0% on high roller, 9% on structurer — is resolved at the base model level in gpt-5.1. gpt-5.1
+   intrinsic alone outperforms gpt-4o-mini LLM-Context (the best gpt-4o-mini mode, F1=0.66) on F1.
+
+2. **The error distribution inverts across models.** gpt-4o-mini systematically over-flags (80 FPs, 8 FNs
+   in intrinsic). gpt-5.1 systematically under-flags on one specific pattern (2 FPs, 11 FNs in intrinsic
+   — driven by FN Smurf at 59%). The capability jump resolves the FP anchoring bias but reveals a
+   residual FN blind spot on the hardest buried-signal trap.
+
+3. **Rule injection effects are capability-dependent.** At gpt-4o-mini, Kayba rules barely move the
+   needle (F1: 0.54→0.56); at gpt-5.1, they produce a strong improvement (F1: 0.883→0.929). LLM-Context
+   improves substantially at both capability levels (gpt-4o-mini: +0.12 F1; gpt-5.1: +0.117 F1), but
+   for different reasons: at gpt-4o-mini, the rules correct systematic anchoring bias; at gpt-5.1, they
+   address a narrow FN Smurf blind spot.
+
+4. **Hierarchical architecture produces opposite failure modes at each model.** At gpt-4o-mini the
+   auditor over-escalates (84 FPs, 0 FNs, +13.4 avg score shift). At gpt-5.1 it under-intervenes
+   (3 FPs, 13 FNs, −0.6 avg score shift). Neither model achieves the idealised well-calibrated auditor.
+
+5. **Context-engineered's low consensus rate is gpt-4o-mini specific.** At gpt-4o-mini: 17% consensus,
+   1.80 revisions, 6.6 calls/case. At gpt-5.1: 100% consensus, 0.65 revisions, 4.3 calls/case. The
+   Kayba rules act as an indiscriminate trigger at gpt-4o-mini but are applied selectively at gpt-5.1
+   — a direct model-capability effect on rule execution.
+
+---
+
+## 7. Thesis Implications
 
 | Comparison | Hypothesis | Result |
 |---|---|---|
-| Intrinsic vs Hierarchical | Governance architecture affects accuracy | **Partially supported** — hierarchical achieves higher F1 (0.688 vs 0.633) via perfect recall, but at the cost of 20 FPs and +10.9 avg score escalation |
-| Intrinsic vs Hierarchical | Independent auditing prevents confirmation bias | **Partially supported** — the auditor overcorrects rather than anchoring, but this produces excessive false positives rather than better calibration |
-| Intrinsic vs Context-Engineered | Kayba rule injection improves on intrinsic | **Weakly supported** — FP Charity improves (60% vs 20%), overall F1 unchanged; other FP traps unresolved |
-| Intrinsic vs LLM-Context | LLM self-reflection rules improve on intrinsic | **Strongly supported** — F1=0.952 vs 0.633; zero FPs; all FP trap subtypes solved |
-| Context-Eng vs LLM-Context | LLM self-synthesis outperforms Kayba extraction | **Strongly supported** — F1=0.952 vs 0.632; the gap is not incremental but transformative at this capability level |
+| Intrinsic vs Hierarchical | Governance architecture affects accuracy | **Marginally supported** — hierarchical F1 0.59 vs 0.54; but improvement is from perfect recall at severe FP cost, not genuine quality improvement |
+| Intrinsic vs Hierarchical | Independent auditing prevents confirmation bias | **Not supported** — auditor escalates aggressively on FP traps, amplifying rather than correcting the analyst's FP bias |
+| Intrinsic vs Context-Engineered | Kayba rule injection improves on intrinsic | **Not supported at this capability level** — F1 0.56 vs 0.54; rules trigger excessive REJECTs without producing correct outcomes; execution capability insufficient |
+| Intrinsic vs LLM-Context | LLM self-reflection rules improve on intrinsic | **Supported** — F1 0.66 vs 0.54; 22 fewer FPs; targeted rules directly address the observed anchoring failure mode |
+| Context-Eng vs LLM-Context | LLM self-synthesis outperforms Kayba extraction | **Strongly supported** — F1 0.66 vs 0.56; 23 fewer FPs; Kayba's generalised principles require higher execution capability than case-specific rules |
 
 ### Suggested framing for thesis write-up
 
-The results are best structured around the two independent experimental axes:
+The gpt-4o-mini results establish the **baseline condition** for the governance comparison:
 
-**Axis 1 — Governance architecture:** Intrinsic vs Hierarchical isolates whether a separate-context
-independent auditor outperforms same-context self-review. At gpt-4o-mini, the hierarchical auditor
-achieves perfect recall (zero FNs) by refusing to approve borderline cases, but this comes at the
-cost of systematic over-escalation: +10.9 avg score shift and 20 false positives. The architecture
-improves one failure mode (FN recall) while creating another (FP inflation). Contrast with gpt-5.1,
-where the same architecture gap largely disappears — suggesting the hierarchical auditor's tendency
-to over-escalate is a model-capability effect that diminishes as the base model becomes better
-calibrated.
+**Contribution 1 — The FP anchoring failure mode:**
+gpt-4o-mini's dominant failure is systematic false positive generation on FP trap groups. The model reads
+legitimate KB evidence but fails to apply it to rebut its own quantitative risk flags — confirmed by the
+evidence coverage / conclusion consistency gap (9.32 vs 6.76). This anchoring failure provides the ground
+truth against which rule injection's effectiveness is evaluated.
 
-**Axis 2 — Knowledge injection:** Intrinsic vs Context-Engineered vs LLM-Context tests whether
-adding rules to the self-review step helps, and whether the source of those rules matters. At
-gpt-4o-mini, Kayba's playbook provides marginal and selective improvement (FP Charity only). LLM
-self-synthesised rules provide a transformative improvement — the only intervention that overcomes
-the model's systematic quantitative anchoring. The finding that LLM-synthesised rules dramatically
-outperform Kayba's extracted skills (F1=0.952 vs 0.632) points to rule density and error-focused
-synthesis as the critical factors: the model needs explicit, case-specific corrective priors, not
-generalised reasoning principles. Unlike the gpt-5.1 run, there is no model mismatch confound in
-this comparison — both artefacts are derived from and applied to the same gpt-4o-mini traces.
+**Contribution 2 — The capability-execution boundary for Kayba:**
+Kayba's generalised skill playbook requires a model capable of applying principles conditionally. At
+gpt-4o-mini, the playbook acts as an undifferentiated trigger (17% consensus, 1.80 revisions) without
+producing correct outcomes. The rules are not wrong — they encode the right direction — but the model
+cannot execute on them selectively. This establishes a capability-execution threshold that gpt-5.1 crosses.
 
----
-
-## 7. Hierarchical Auditor Failure Analysis
-
-> **For subsequent experiments:** Run `python 06_analyse_auditor.py` after each full experiment and
-> paste the output below. This section documents which of the two competing hypotheses best explains
-> hierarchical over-escalation for that model/dataset combination.
-
-**Hypotheses under test:**
-- **H-A (Context-window isolation):** The auditor lacks the analyst's evidence chain and defaults to
-  salient quantitative signals when re-evaluating from raw data. Signature: citations dominated by
-  metric names (fan_in, fan_out, volume), little or no engagement with KB article content.
-- **H-B (Prompt under-constraining):** The auditor's system prompt does not adequately instruct it to
-  consider legitimate explanations for flags. Signature: citations acknowledge KB content but still
-  treat quantitative flags as dispositive.
-
-*This section is a template. The analysis below was run retrospectively on the n=50 gpt-4o-mini results
-with 06_analyse_auditor.py as a methodology proof-of-concept. Future RESULTS files should include this
-section populated from the corresponding experiment.*
-
-### Summary (n=50, gpt-4o-mini, retrospective)
-
-| Metric | Value |
-|---|---|
-| FP errors in hierarchical mode | 20 / 28 innocent clients |
-| Avg score escalation (intrinsic → hierarchical) for FP errors | +13.2 points |
-| Auditor citations classified QUANT | 27 / 42 (64%) |
-| Auditor citations classified QUAL | 6 / 42 (14%) |
-
-### Reasoning Stance Breakdown
-
-| Stance | n | % | Interpretation |
-|---|:---:|:---:|---|
-| QUANT_DOMINANT | 11 | 55% | Auditor cites only raw flags; no KB engagement |
-| MIXED | 7 | 35% | Sees KB context but treats quantitative flags as dispositive |
-| QUAL_ENGAGED | 1 | 5% | Genuinely wrestles with qualitative evidence before escalating |
-| DISMISSAL | 1 | 5% | Acknowledges KB explanation, rejects it as unverified |
-
-### Per-Subtype Breakdown
-
-| Group | n (FP errors) | Dominant stance | Interpretation |
-|---|:---:|---|---|
-| FP Payroll | 7/7 | QUANT_DOMINANT (5), MIXED (2) | Auditor treats fan_out=100+ as standalone finding; payroll explanation never engages |
-| FP High Roller | 2/5 | QUANT_DOMINANT (2) | Volume/fan_out flags treated as dispositive |
-| FP Charity | 4/5 | QUANT_DOMINANT (2), MIXED (2) | Fan-in threshold acknowledged but NGO context dismissed |
-| FP Structurer | 5/5 | MIXED (3), QUANT_DOMINANT (1), QUAL_ENGAGED (1) | Most varied; one case genuinely reads article |
-
-### Hypothesis Assessment
-
-**H-A is the primary explanation (60% of cases):** The majority of auditor rejections show no
-substantive engagement with KB article content. The auditor re-evaluates from raw quantitative data
-in a fresh context window, finds a flag, and escalates — the analyst's carefully constructed
-evidence chain is invisible to it.
-
-**H-B is a secondary factor (40% of cases):** In the MIXED cases, the auditor does read the KB
-context but still concludes that quantitative flags are dispositive. This subset implicates the
-auditor prompt: it instructs the auditor to check "all claims from the news articles" but does not
-explicitly instruct it to treat flags as rebuttable when a plausible legitimate explanation exists.
-
-**Both hypotheses have different design implications.** H-A is architectural: the separate context
-window is a structural information loss that cannot be fixed by prompt engineering alone. H-B is
-addressable through prompt revision. The data suggest a combined intervention would be required to
-materially reduce hierarchical FP rate: (1) pass the analyst's full evidence chain into the auditor
-context, and (2) add an explicit "flags are rebuttable" instruction to the auditor prompt.
-
-### Representative Verbatim Quotations
-
-**QUANT_DOMINANT — C4562 (FP Charity):**
-> "The Analyst's report fails to directly address the RAW quantitative data that indicates a HIGH
-> FAN-IN risk flag with 25 unique senders, which is clearly stated to be above the threshold of 20.
-> The Analyst mentions the fan-in but does not provide a robust explanation regarding the implications
-> of this specific raw data finding."
-> Citation: *"Raw data shows Fan-In=25 which triggers a HIGH risk flag, exceeding the threshold of
-> 20, but Analyst's report insufficiently justifies the medium risk score of 65."*
-
-**DISMISSAL — C9986 (FP Control Innocent):**
-> "The Analyst's report did not adequately address the absence of a clear connection between the
-> client's financial activities and the legitimate business activities suggested in the news articles.
-> While the Analyst noted complexity in the transactions, they failed to acknowledge the critical
-> lack of evidence linking the transactions to the project management profession."
-
-**MIXED — C1941 (FP Structurer):**
-> "The Analyst fails to fully address all relevant risk flags... While the average transaction amount
-> is correctly noted as exceeding the $1,000 threshold... the Analyst did not adequately account for
-> the claims made in the news articles."
-> Citation: *"Raw data shows Avg Amount = $1,160.42 prompting a risk flag, but Analyst does not
-> adequately explain the implications of high patient throughput and audit scrutiny as detailed in
-> Article 2."*
+**Contribution 3 — LLM-Context as the effective governance mechanism at lower capability:**
+LLM-synthesised rules, structured around specific failure examples, are sufficiently concrete for
+gpt-4o-mini to act on. They reduce FPs by 22 and improve F1 by 0.12, confirming that governance
+effectiveness depends not only on rule quality but on whether the governed model can execute on the
+form of rules provided.
 
 ---
 
-## 6. Output Files
+## 8. Output Files
 
 | File | Contents |
 |---|---|
-| `results/test/gpt-4o-mini/run_1/summary.csv` | Wide-format raw scores for 50 clients × 4 modes (49 for ctx/llm due to errors) |
+| `results/test/gpt-4o-mini/run_1/summary.csv` | Wide-format raw scores for 168 clients × 4 modes |
 | `results/test/gpt-4o-mini/run_1/evaluation.csv` | Per-client computed metrics (in_range, correct, score_shift, etc.) |
 | `results/test/gpt-4o-mini/run_1/evaluation_{mode}.csv` | Per-mode artifact (logged to MLflow) |
 | `results/test/gpt-4o-mini/run_1/{mode}/*.json` | Full AgentState for each client — forensics, news, reasoning, review |
-| `results/old_runs/RESULTS_gpt-4o-mini.md` | Earlier 3-mode results (intrinsic, hierarchical, ctx only) before llm_context was added |
-| `external_agent_injection.txt` | Kayba's 28-skill context playbook (injected into ctx mode) |
-| `llm_context_rules.txt` | Self-synthesised rules from gpt-4o-mini training traces (injected into llm_context mode) |
-| `training_traces/*.md` | 50 annotated train traces fed to both Kayba and the LLM synthesiser |
+| `external_agent_injection_gpt-4o-mini.txt` | Kayba's 28-skill context playbook (derived from 86 gpt-4o-mini train traces) |
+| `llm_context_rules_gpt-4o-mini.txt` | Self-synthesised rules from 86 gpt-4o-mini training traces (3,743 chars) |
+| `training_traces/*.md` | 86 annotated train traces fed to both Kayba and the LLM synthesiser |
 
 To inspect a specific client's full reasoning chain:
 ```python
 import json
-state = json.load(open("results/test/gpt-4o-mini/run_1/intrinsic/C2083.json"))
+state = json.load(open("results/test/gpt-4o-mini/run_1/intrinsic/C1941.json"))
 print(state["analyst_output"]["reasoning"])
 print(state["review_output"]["reasoning"])
 ```
 
 To reproduce the evaluation:
 ```bash
+LLM_MODEL=gpt-4o-mini python 02_run_experiment.py --dataset test --modes intrinsic hierarchical context_engineered llm_context --model gpt-4o-mini
 python 03_evaluate.py --dataset test --model gpt-4o-mini
 mlflow ui  # http://127.0.0.1:5000
 ```

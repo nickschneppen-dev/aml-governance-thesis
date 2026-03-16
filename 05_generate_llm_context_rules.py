@@ -179,8 +179,8 @@ def main() -> None:
     )
     parser.add_argument(
         "--output",
-        default="llm_context_rules.txt",
-        help="Output file for the generated rules (default: llm_context_rules.txt)",
+        default=None,
+        help="Output file for the generated rules (default: llm_context_rules_{model}.txt)",
     )
     args = parser.parse_args()
 
@@ -209,7 +209,15 @@ def main() -> None:
 
     model = os.getenv("LLM_MODEL", "gpt-4o-mini")
     print(f"Synthesising rules with {model} ...")
-    llm = ChatOpenAI(model=model, temperature=0)
+    if model.startswith("grok-"):
+        llm = ChatOpenAI(
+            model=model,
+            temperature=0,
+            api_key=os.getenv("XAI_API_KEY"),
+            base_url=os.getenv("XAI_BASE_URL", "https://api.x.ai/v1"),
+        )
+    else:
+        llm = ChatOpenAI(model=model, temperature=0)
     response = llm.invoke([
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": prompt},
@@ -217,7 +225,7 @@ def main() -> None:
 
     rules_text = response.content
 
-    output_path = Path(args.output)
+    output_path = Path(args.output if args.output else f"llm_context_rules_{model}.txt")
     output_path.write_text(rules_text, encoding="utf-8")
     print(f"\nRules written to {output_path} ({len(rules_text):,} chars)")
     print("\nPreview (first 600 chars):")

@@ -23,6 +23,7 @@ Usage:
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from langgraph.graph import END, StateGraph
@@ -39,8 +40,18 @@ from agents import (
 from state import AgentState
 
 MAX_REVISIONS = 2
-SKILLBOOK_PATH = Path("external_agent_injection.txt")
-LLM_CONTEXT_RULES_PATH = Path("llm_context_rules.txt")
+
+
+def _model_artefact_path(prefix: str) -> Path:
+    """Return a model-specific artefact path, falling back to the generic name.
+
+    E.g. for LLM_MODEL=gpt-4o-mini and prefix='external_agent_injection':
+      tries  external_agent_injection_gpt-4o-mini.txt  first,
+      falls back to  external_agent_injection.txt  if not found.
+    """
+    model = os.getenv("LLM_MODEL", "gpt-4o-mini")
+    specific = Path(f"{prefix}_{model}.txt")
+    return specific if specific.exists() else Path(f"{prefix}.txt")
 
 VALID_MODES = ("intrinsic", "hierarchical", "context_engineered", "llm_context")
 
@@ -77,19 +88,21 @@ def build_graph(mode: str) -> StateGraph:
     # Load external context for modes that inject rules into the Analyst prompt
     extra_context = ""
     if mode == "context_engineered":
-        if not SKILLBOOK_PATH.exists():
+        path = _model_artefact_path("external_agent_injection")
+        if not path.exists():
             raise FileNotFoundError(
-                f"Skillbook not found at {SKILLBOOK_PATH}. "
+                f"Skillbook not found at {path}. "
                 "Run Kayba's agentic_system_prompting.py first to generate it."
             )
-        extra_context = SKILLBOOK_PATH.read_text(encoding="utf-8")
+        extra_context = path.read_text(encoding="utf-8")
     elif mode == "llm_context":
-        if not LLM_CONTEXT_RULES_PATH.exists():
+        path = _model_artefact_path("llm_context_rules")
+        if not path.exists():
             raise FileNotFoundError(
-                f"LLM-Context rules not found at {LLM_CONTEXT_RULES_PATH}. "
+                f"LLM-Context rules not found at {path}. "
                 "Run 05_generate_llm_context_rules.py first to generate it."
             )
-        extra_context = LLM_CONTEXT_RULES_PATH.read_text(encoding="utf-8")
+        extra_context = path.read_text(encoding="utf-8")
 
     # The analyst is identical across all modes — rules are NOT injected here.
     # Only the review step differs, isolating the governance mechanism.
