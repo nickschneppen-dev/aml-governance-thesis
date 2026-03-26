@@ -267,6 +267,40 @@ def auditor_node(state: AgentState, config: RunnableConfig) -> dict:
     }
 
 
+# ---------------------------------------------------------------------------
+# Factory: make_auditor_node
+# ---------------------------------------------------------------------------
+def make_auditor_node(extra_prompt: str = ""):
+    """Return an auditor_node closure with optional rules injected into the user message.
+
+    When extra_prompt is provided (hier_context_engineered / hier_llm_context modes),
+    the rules are appended to the review user message under a <Context_Playbook> tag,
+    mirroring make_self_review_node injection location. The auditor retains its own
+    system prompt and separate context window — no shared analyst_conversation.
+    """
+    def _node(state: AgentState, config: RunnableConfig) -> dict:
+        llm = get_llm().with_structured_output(ReviewOutput)
+
+        review_context = _build_review_context(state)
+        if extra_prompt.strip():
+            review_context = (
+                review_context
+                + f"\n\n<Context_Playbook>\n{extra_prompt}\n</Context_Playbook>"
+            )
+
+        output: ReviewOutput = llm.invoke([
+            {"role": "system", "content": AUDITOR_PROMPT},
+            {"role": "user", "content": review_context},
+        ], config=config)
+
+        return {
+            "review_output": output.model_dump(),
+            "review_decision": output.decision,
+        }
+
+    return _node
+
+
 
 # ---------------------------------------------------------------------------
 # Factory: make_analyst_node / make_revision_node

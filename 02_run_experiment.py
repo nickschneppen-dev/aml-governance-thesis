@@ -53,6 +53,8 @@ MODE_PREFIX = {
     "hierarchical": "hier",
     "context_engineered": "ctx",
     "llm_context": "llm",
+    "hier_context_engineered": "hier_ctx",
+    "hier_llm_context": "hier_llm",
 }
 
 BASE_RESULTS_DIR = Path("results")
@@ -120,14 +122,55 @@ def _save_state(dataset: str, model: str, run_id: str, mode: str, client_id: str
         json.dump(state, f, indent=2, default=str)
 
 
-def _append_summary_row(summary_file: Path, columns: list[str], row: dict) -> None:
-    """Append a single row to the summary CSV, writing the header if needed."""
-    write_header = not summary_file.exists() or summary_file.stat().st_size == 0
-    with open(summary_file, "a", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=columns)
-        if write_header:
+def _upsert_summary_row(summary_file: Path, columns: list[str], row: dict) -> None:
+    """Merge a row into the summary CSV by client_id.
+
+    - File doesn't exist → create with `columns` as header and write row.
+    - client_id already in file → update that row in-place and rewrite.
+    - New client, same schema → fast-path append.
+    - New client, new columns → append row and rewrite with expanded header.
+    """
+    if not summary_file.exists() or summary_file.stat().st_size == 0:
+        with open(summary_file, "w", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(f, fieldnames=columns)
             writer.writeheader()
-        writer.writerow(row)
+            writer.writerow(row)
+        return
+
+    # Read existing file
+    with open(summary_file, newline="", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        existing_cols = list(reader.fieldnames or [])
+        existing_rows = list(reader)
+
+    # Columns genuinely new to this run (preserve existing order, append new)
+    new_cols = [c for c in columns if c not in existing_cols]
+    merged_cols = existing_cols + new_cols
+
+    # Check if this client already has a row
+    client_id = row["client_id"]
+    found = False
+    for existing_row in existing_rows:
+        if existing_row["client_id"] == client_id:
+            existing_row.update(row)
+            found = True
+            break
+
+    if found or new_cols:
+        # Must rewrite: existing row updated in-place, or schema expanded
+        if not found:
+            new_row = {col: "" for col in merged_cols}
+            new_row.update(row)
+            existing_rows.append(new_row)
+        with open(summary_file, "w", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(f, fieldnames=merged_cols, extrasaction="ignore")
+            writer.writeheader()
+            writer.writerows(existing_rows)
+    else:
+        # New client, same schema — fast-path append
+        with open(summary_file, "a", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(f, fieldnames=merged_cols)
+            writer.writerow(row)
 
 
 def _extract_summary(state: dict) -> dict:
@@ -353,7 +396,7 @@ def main() -> None:
             row[f"{p1}_{p2}_delta"] = (s2 - s1) if (s1 is not None and s2 is not None) else None
 
         with csv_lock:
-            _append_summary_row(summary_file, summary_columns, row)
+            _upsert_summary_row(summary_file, summary_columns, row)
 
         elapsed = time.time() - client_start
         with counter_lock:

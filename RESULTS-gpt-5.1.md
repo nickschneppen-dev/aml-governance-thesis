@@ -44,6 +44,16 @@ Not all pairwise comparisons are methodologically valid. Each comparison isolate
 | Hierarchical vs Context-Engineered | **Confounded** — architecture *and* Kayba rules differ simultaneously | ❌ |
 | Hierarchical vs LLM-Context | **Confounded** — architecture *and* LLM rules differ simultaneously | ❌ |
 
+Two additional **combined modes** (Hier+Ctx, Hier+LLM) enable decomposition of the confounded pairs:
+
+| Comparison | Variable isolated | Valid? |
+|---|---|:---:|
+| Hierarchical vs Hier+Ctx | Kayba injection on top of hierarchical architecture (rules added, architecture fixed) | ✅ |
+| Hierarchical vs Hier+LLM | LLM rules on top of hierarchical architecture (rules added, architecture fixed) | ✅ |
+| Context-Engineered vs Hier+Ctx | Architecture change, Kayba rules fixed (self-review vs separate auditor, both with Kayba) | ✅ |
+| LLM-Context vs Hier+LLM | Architecture change, LLM rules fixed (self-review vs separate auditor, both with LLM rules) | ✅ |
+| Hier+Ctx vs Hier+LLM | Source of rules on hierarchical architecture (Kayba vs LLM-synthesised; architecture fixed) | ✅ |
+
 ---
 
 ## 2. Core Results
@@ -252,6 +262,61 @@ in-distribution corrective rules.
 The relatively low conclusion consistency for Hierarchical (7.37, same as intrinsic despite 100%
 consensus) confirms the gpt-5.1 hierarchical auditor's pattern: it approves reasoning it has not
 critically engaged with, rather than genuinely verifying the analyst's argument chain.
+
+---
+
+## 5b. Combined Governance Modes: Hierarchical + Context Injection
+
+Two additional modes stack context injection onto the hierarchical architecture — the auditor receives either the Kayba playbook (Hier+Ctx) or the LLM-synthesised rules (Hier+LLM) in its prompt. This creates a 2×3 design (architecture × rule source) and enables the previously-confounded comparisons.
+
+### Classification Performance
+
+| Metric | Hierarchical | Hier+Ctx | Hier+LLM | Context-Eng | LLM-Context |
+|---|:---:|:---:|:---:|:---:|:---:|
+| **Accuracy** | 90.5% | 94.0% | **98.2%** | 95.2% | **100%** |
+| **Precision** | 0.940 | **1.000** | 0.983 | **1.000** | **1.000** |
+| **Recall** | 0.783 | 0.833 | 0.967 | 0.867 | **1.000** |
+| **F1** | 0.855 | 0.909 | 0.975 | 0.929 | **1.000** |
+| True Positives | 47 | 50 | 58 | 52 | **60** |
+| False Positives | 3 | **0** | 1 | **0** | **0** |
+| True Negatives | 105 | **108** | 107 | **108** | **108** |
+| False Negatives | 13 | 10 | 2 | 8 | **0** |
+| MAE | 17.1 | 11.4 | **9.4** | 10.6 | **7.6** |
+| In-Range % | 44.6% | 92.3% | 89.3% | **94.0%** | 97.0% |
+| Consensus Rate | **100%** | **100%** | 99% | **100%** | **100%** |
+| Avg Revisions | **0.04** | 0.46 | 0.20 | 0.65 | 0.57 |
+| Avg Score Shift | −0.6 | −8.9 | −8.3 | **−6.0** | −3.4 |
+
+### Per-Group Classification Accuracy
+
+| Group | n | Hierarchical | Hier+Ctx | Hier+LLM | Context-Eng | LLM-Context |
+|---|:---:|:---:|:---:|:---:|:---:|:---:|
+| **Control Guilty** | 16 | ⚠️ 94% | ✅ 100% | ✅ 100% | ✅ 100% | ✅ 100% |
+| **Control Innocent** | 16 | ✅ 100% | ✅ 100% | ✅ 100% | ✅ 100% | ✅ 100% |
+| **FP Trap: Charity** | 23 | ✅ 100% | ✅ 100% | ✅ 100% | ✅ 100% | ✅ 100% |
+| **FP Trap: Payroll** | 23 | ✅ 100% | ✅ 100% | ✅ 100% | ✅ 100% | ✅ 100% |
+| **FP Trap: High Roller** | 23 | ⚠️ 87% | ✅ 100% | ✅ 96% | ✅ 100% | ✅ 100% |
+| **FP Trap: Structurer** | 23 | ✅ 100% | ✅ 100% | ✅ 100% | ✅ 100% | ✅ 100% |
+| **FN Trap: Sleeper** | 22 | ⚠️ 86% | ✅ 91% | ✅ 95% | ✅ 91% | ✅ 100% |
+| **FN Trap: Smurf** | 22 | ❌ 59% | ❌ 64% | ✅ 95% | ⚠️ 73% | ✅ 100% |
+
+### What the Combined Modes Reveal
+
+**Rules rescue the deferential auditor.** Bare hierarchical at gpt-5.1 is too passive (100% consensus, 0.04 avg revisions, −0.6 score shift) — it rarely intervenes. Adding either rule set to the auditor's prompt activates it: consensus remains high but revisions increase (0.46 for Hier+Ctx, 0.20 for Hier+LLM) and score shifts become meaningfully corrective (−8.9 and −8.3). Both combined modes substantially outperform bare hierarchical (+0.054 and +0.120 F1).
+
+**Hier+LLM is nearly as strong as LLM-Context, driven by FN Smurf.** Hier+LLM achieves F1=0.975, missing perfection only on FN Smurf (95% vs 100%) and 2 remaining FNs. The LLM-synthesised rules provide effective smurf-detection guidance even when delivered to a separate auditor context rather than the analyst's self-review. In contrast, Hier+Ctx has FN Smurf at only 64% — the Kayba playbook provides insufficient smurf-specific signal for the auditor to catch all buried-signal cases.
+
+**Architecture trade-off with Kayba rules:** Context-Eng (52 TPs, 0 FPs, F1=0.929) vs Hier+Ctx (50 TPs, 0 FPs, F1=0.909). Both achieve zero false positives, but self-review converts 2 more guilty clients correctly. The auditor's deferential nature costs recall even when given the same rules: it reads the Kayba playbook but still doesn't intervene on cases where the analyst's first draft missed a guilty verdict.
+
+**Architecture trade-off with LLM rules:** LLM-Context (60 TPs, 0 FPs, F1=1.000) vs Hier+LLM (58 TPs, 1 FP, F1=0.975). Self-review with LLM rules remains the ceiling — the analyst revising its own draft with targeted corrective rules achieves better recall than a separate auditor applying the same rules to an already-fixed analyst output. The 2-TP gap reflects the fundamental architectural constraint: the hierarchical auditor receives the analyst's completed reasoning and cannot inject corrective signal earlier in the chain.
+
+**Decomposing the confounded comparisons:**
+- *Hierarchical vs Hier+Ctx*: +0.054 F1 — Kayba injection makes the auditor meaningfully more effective.
+- *Hierarchical vs Hier+LLM*: +0.120 F1 — LLM rules make the auditor substantially more effective, closing most of the gap to LLM-Context.
+- *Context-Eng vs Hier+Ctx*: −0.020 F1 — self-review with Kayba marginally outperforms hierarchical auditor with Kayba.
+- *LLM-Context vs Hier+LLM*: −0.025 F1 — self-review with LLM rules marginally outperforms hierarchical auditor with LLM rules.
+
+The consistent direction of the architecture effect (self-review ≥ hierarchical when rules are fixed) suggests that for gpt-5.1, the mechanism of rule injection matters more than the architectural separation: the analyst revising in-context with corrective rules is slightly more effective than a separate auditor receiving the same rules after the fact.
 
 ---
 

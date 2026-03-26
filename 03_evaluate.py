@@ -46,12 +46,14 @@ load_dotenv()
 CLASSIFICATION_THRESHOLD = 50  # score >= 50 → predict guilty
 EXPERIMENT_NAME = "aml-governance"
 
-MODES = ["int", "hier", "ctx", "llm"]
+MODES = ["int", "hier", "ctx", "llm", "hier_ctx", "hier_llm"]
 MODE_LABELS = {
     "int": "intrinsic",
     "hier": "hierarchical",
     "ctx": "context_engineered",
     "llm": "llm_context",
+    "hier_ctx": "hier_context_engineered",
+    "hier_llm": "hier_llm_context",
 }
 
 # Display-friendly group ordering
@@ -488,7 +490,7 @@ def evaluate_reasoning(
         model=judge_model,
         parameters={"temperature": 0},
         greater_is_better=True,
-        aggregations=["mean", "min", "max"],
+        aggregations=["mean"],
     )
 
     conclusion_consistency = make_genai_metric(
@@ -504,7 +506,7 @@ def evaluate_reasoning(
         model=judge_model,
         parameters={"temperature": 0},
         greater_is_better=True,
-        aggregations=["mean", "min", "max"],
+        aggregations=["mean"],
     )
 
     print(f"  Running LLM reasoning evaluation for {mode_label} "

@@ -33,6 +33,7 @@ from agents import (
     finalise_node,
     forensics_scout_node,
     make_analyst_node,
+    make_auditor_node,
     make_revision_node,
     make_self_review_node,
     news_scout_node,
@@ -53,7 +54,8 @@ def _model_artefact_path(prefix: str) -> Path:
     specific = Path(f"{prefix}_{model}.txt")
     return specific if specific.exists() else Path(f"{prefix}.txt")
 
-VALID_MODES = ("intrinsic", "hierarchical", "context_engineered", "llm_context")
+VALID_MODES = ("intrinsic", "hierarchical", "context_engineered", "llm_context",
+               "hier_context_engineered", "hier_llm_context")
 
 
 def _should_revise(state: AgentState) -> str:
@@ -85,9 +87,9 @@ def build_graph(mode: str) -> StateGraph:
             f"Unknown mode: {mode!r}. Use one of: {', '.join(VALID_MODES)}."
         )
 
-    # Load external context for modes that inject rules into the Analyst prompt
+    # Load external context for modes that inject rules into the review step
     extra_context = ""
-    if mode == "context_engineered":
+    if mode in ("context_engineered", "hier_context_engineered"):
         path = _model_artefact_path("external_agent_injection")
         if not path.exists():
             raise FileNotFoundError(
@@ -95,7 +97,7 @@ def build_graph(mode: str) -> StateGraph:
                 "Run Kayba's agentic_system_prompting.py first to generate it."
             )
         extra_context = path.read_text(encoding="utf-8")
-    elif mode == "llm_context":
+    elif mode in ("llm_context", "hier_llm_context"):
         path = _model_artefact_path("llm_context_rules")
         if not path.exists():
             raise FileNotFoundError(
@@ -109,10 +111,17 @@ def build_graph(mode: str) -> StateGraph:
     analyst_fn = make_analyst_node()
     revision_fn = make_revision_node()
 
-    # Select review node: hierarchical uses an independent auditor; all other
-    # modes use self-review. For context_engineered and llm_context, the rules
-    # are injected into the self-review user message (extra_context != "").
-    review_fn = auditor_node if mode == "hierarchical" else make_self_review_node(extra_context)
+    # Select review node:
+    #   hierarchical*:            independent auditor, no rules
+    #   hier_context_engineered:  independent auditor + Kayba rules (user message)
+    #   hier_llm_context:         independent auditor + LLM rules (user message)
+    #   all others:               self-review, with or without rules
+    if mode == "hierarchical":
+        review_fn = auditor_node
+    elif mode in ("hier_context_engineered", "hier_llm_context"):
+        review_fn = make_auditor_node(extra_context)
+    else:
+        review_fn = make_self_review_node(extra_context)
 
     graph = StateGraph(AgentState)
 

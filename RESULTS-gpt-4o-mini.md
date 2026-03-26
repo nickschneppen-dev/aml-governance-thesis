@@ -44,6 +44,16 @@ Not all pairwise comparisons are methodologically valid. Each comparison isolate
 | Hierarchical vs Context-Engineered | **Confounded** — architecture *and* Kayba rules differ simultaneously | ❌ |
 | Hierarchical vs LLM-Context | **Confounded** — architecture *and* LLM rules differ simultaneously | ❌ |
 
+Two additional **combined modes** (Hier+Ctx, Hier+LLM) enable decomposition of the confounded pairs:
+
+| Comparison | Variable isolated | Valid? |
+|---|---|:---:|
+| Hierarchical vs Hier+Ctx | Kayba injection on top of hierarchical architecture (rules added, architecture fixed) | ✅ |
+| Hierarchical vs Hier+LLM | LLM rules on top of hierarchical architecture (rules added, architecture fixed) | ✅ |
+| Context-Engineered vs Hier+Ctx | Architecture change, Kayba rules fixed (self-review vs separate auditor, both with Kayba) | ✅ |
+| LLM-Context vs Hier+LLM | Architecture change, LLM rules fixed (self-review vs separate auditor, both with LLM rules) | ✅ |
+| Hier+Ctx vs Hier+LLM | Source of rules on hierarchical architecture (Kayba vs LLM-synthesised; architecture fixed) | ✅ |
+
 ---
 
 ## 2. Core Results
@@ -243,6 +253,55 @@ justify its escalation decision, producing locally coherent chains built around 
 
 ---
 
+## 5b. Combined Governance Modes: Hierarchical + Context Injection
+
+Two additional modes stack context injection onto the hierarchical architecture — the auditor receives either the Kayba playbook (Hier+Ctx) or the LLM-synthesised rules (Hier+LLM) in its prompt. This creates a 2×3 design (architecture × rule source) and enables the previously-confounded comparisons listed above.
+
+### Classification Performance
+
+| Metric | Hierarchical | Hier+Ctx | Hier+LLM | Context-Eng | LLM-Context |
+|---|:---:|:---:|:---:|:---:|:---:|
+| **Accuracy** | 50.0% | 38.7% | 42.9% | 48.8% | **64.3%** |
+| **F1** | 0.59 | 0.534 | 0.551 | 0.56 | **0.66** |
+| True Positives | **60** | 59 | 59 | 55 | 58 |
+| False Positives | 84 | **102** | 95 | 81 | **58** |
+| True Negatives | 24 | **6** | 13 | 27 | **50** |
+| False Negatives | **0** | 1 | 1 | 5 | 2 |
+| MAE | 36.3 | **41.4** | 36.8 | 34.0 | **25.2** |
+| In-Range % | 39.9% | 33.3% | 39.9% | 32.1% | **49.4%** |
+| Consensus Rate | 28% | **0%** | 14% | 17% | 32% |
+| Avg Revisions | 1.62 | **2.00** | 1.80 | **1.80** | 1.61 |
+| Avg Score Shift | +13.4 | **+23.8** | +20.6 | +5.2 | +3.1 |
+
+### Per-Group Classification Accuracy
+
+| Group | n | Hierarchical | Hier+Ctx | Hier+LLM | Context-Eng | LLM-Context |
+|---|:---:|:---:|:---:|:---:|:---:|:---:|
+| **Control Guilty** | 16 | ✅ 100% | ✅ 100% | ✅ 100% | ⚠️ 94% | ✅ 100% |
+| **Control Innocent** | 16 | ⚠️ 81% | ❌ 31% | ⚠️ 62% | ⚠️ 88% | ✅ 94% |
+| **FP Trap: Charity** | 23 | ❌ 35% | ❌ 0% | ❌ 4% | ❌ 30% | ⚠️ 48% |
+| **FP Trap: Payroll** | 23 | ❌ 9% | ❌ 0% | ❌ 0% | ❌ 13% | ⚠️ 52% |
+| **FP Trap: High Roller** | 23 | ❌ 0% | ❌ 0% | ❌ 0% | ❌ 0% | ❌ 17% |
+| **FP Trap: Structurer** | 23 | ❌ 4% | ❌ 4% | ❌ 9% | ❌ 13% | ❌ 35% |
+| **FN Trap: Sleeper** | 22 | ✅ 100% | ✅ 95% | ✅ 100% | ✅ 91% | ✅ 100% |
+| **FN Trap: Smurf** | 22 | ✅ 100% | ✅ 100% | ✅ 95% | ✅ 91% | ✅ 91% |
+
+### What the Combined Modes Reveal
+
+**Hier+Ctx is the worst configuration in the entire experiment.** 102 false positives, 0% consensus rate (every single case is rejected), and an average score shift of +23.8. The Kayba playbook, designed to increase critical scrutiny of risk escalations, hands the already over-aggressive gpt-4o-mini auditor additional ammunition to escalate. The two biases compound: the hierarchical auditor's baseline over-escalation tendency (+13.4 shift) is amplified by the playbook triggering even more aggressive intervention. Only 6 of 108 innocent clients are correctly cleared.
+
+**Hier+LLM is partially moderated but still inferior.** The LLM-synthesised rules provide more targeted guidance than Kayba's general principles, which slightly attenuates the compounding effect: 95 FPs (vs 102), 14% consensus (vs 0%), and 13 correctly-cleared innocents (vs 6). The LLM rules, built from specific failure examples, are less likely to be applied as blanket escalation triggers. But the fundamental problem remains: the hierarchical auditor's escalation bias absorbs any downward corrective signal the rules provide.
+
+**Decomposing the confounded comparisons:**
+- *Hierarchical vs Hier+Ctx* (Kayba injection on hierarchical): −0.056 F1. Adding Kayba rules to the auditor actively hurts — it converts a marginally adequate auditor into a total false-positive machine.
+- *Hierarchical vs Hier+LLM* (LLM rules on hierarchical): −0.039 F1. Same direction, smaller damage.
+- *Context-Eng vs Hier+Ctx* (architecture change, Kayba fixed): −0.026 F1. Self-review with Kayba is marginally better than a separate auditor with Kayba.
+- *LLM-Context vs Hier+LLM* (architecture change, LLM rules fixed): −0.109 F1. Self-review with LLM rules substantially outperforms a separate auditor with LLM rules. This is the largest architecture effect in the experiment — but it runs in the direction of favouring self-review.
+
+The combined-mode results confirm that at gpt-4o-mini's capability level, governance interventions do not stack constructively. Each additional layer of escalation bias (hierarchical auditor, Kayba rules) compounds rather than balances the previous one. The intrinsic+LLM-Context combination, which works within a single context window and provides specific corrective rules, is the only configuration that materially improves the baseline.
+
+---
+
 ## 6. Comparison with gpt-5.1 Results
 
 Both models were tested on the identical n=168 test set (60 guilty, 108 innocent), enabling direct comparison.
@@ -331,6 +390,12 @@ LLM-synthesised rules, structured around specific failure examples, are sufficie
 gpt-4o-mini to act on. They reduce FPs by 22 and improve F1 by 0.12, confirming that governance
 effectiveness depends not only on rule quality but on whether the governed model can execute on the
 form of rules provided.
+
+---
+
+## 7b. Revision Depth Ablation
+
+A separate ablation tests how MAX_REVISIONS (the cap on self-review loops) affects intrinsic-mode performance across depths 0–10. The key result: **depth 0 (no revision loop) is optimal** — F1=0.690 at depth 0 vs F1=0.561 at depth 2 (the main experiment baseline). Every additional revision loop degrades performance through score compression and escalation bias, confirming that the main experiment's intrinsic baseline is already penalised. Full results and methodology: **`RESULTS-revision-depth-gpt-4o-mini.md`**.
 
 ---
 
