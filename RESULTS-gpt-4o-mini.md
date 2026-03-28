@@ -393,7 +393,22 @@ form of rules provided.
 
 ---
 
-## 7b. Revision Depth Ablation
+## 7b. Run-to-Run Variance (Robustness Check)
+
+Three independent runs (same model, same dataset, different LLM samples) quantify how stable the results are under sampling noise.
+
+| Mode | Run 1 | Run 2 | Run 3 | Mean F1 | Std |
+|---|:---:|:---:|:---:|:---:|:---:|
+| **Intrinsic** | 0.542 | 0.523 | 0.537 | 0.534 | ±0.008 |
+| **Hierarchical** | 0.588 | 0.566 | 0.581 | 0.578 | ±0.009 |
+| **Context-Eng** | 0.561 | 0.578 | 0.592 | 0.577 | ±0.012 |
+| **LLM-Context** | 0.659 | 0.635 | 0.646 | 0.647 | ±0.010 |
+
+F1 standard deviation is ≤0.012 across all modes — roughly 1–2 percentage points. The **rank ordering is fully stable** across all three runs: LLM-Context > Hierarchical ≈ Context-Eng > Intrinsic. Run 1's LLM-Context result (F1=0.659) is the high-water mark; the mean across runs (0.647) remains the best mode by a clear margin. The main findings are not artefacts of a single lucky sample.
+
+The FP count for LLM-Context ranges 58–69 across runs (mean 65.3), reflecting the mode's sensitivity to which specific borderline cases the LLM assigns near-threshold scores. This range does not affect the qualitative conclusion — LLM-Context consistently produces substantially fewer FPs than the other three modes (which average 83–87 FPs).
+
+## 7c. Revision Depth Ablation
 
 A separate ablation tests how MAX_REVISIONS (the cap on self-review loops) affects intrinsic-mode performance across depths 0–10. The key result: **depth 0 (no revision loop) is optimal** — F1=0.690 at depth 0 vs F1=0.561 at depth 2 (the main experiment baseline). Every additional revision loop degrades performance through score compression and escalation bias, confirming that the main experiment's intrinsic baseline is already penalised. Full results and methodology: **`RESULTS-revision-depth-gpt-4o-mini.md`**.
 
