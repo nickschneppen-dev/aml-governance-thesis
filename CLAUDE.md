@@ -242,10 +242,22 @@ results/
         summary.csv                # wide-format comparison (streamed, one row per client)
 ```
 
+**Supported modes** (pass any combination to `--modes`):
+
+| Mode | Description | Column prefix |
+|---|---|---|
+| `intrinsic` | Self-review baseline | `int` |
+| `hierarchical` | Independent auditor | `hier` |
+| `context_engineered` | Self-review + Kayba playbook | `ctx` |
+| `llm_context` | Self-review + LLM-synthesised rules | `llm` |
+| `hier_context_engineered` | Hierarchical auditor + Kayba playbook | `hier_ctx` |
+| `hier_llm_context` | Hierarchical auditor + LLM-synthesised rules | `hier_llm` |
+
+The last two complete a **2×3 factorial design** (architecture: intrinsic vs hierarchical × rule source: none / Kayba / LLM), deconfounding architecture from rule injection.
+
 **summary.csv** columns are generated dynamically from whichever modes were run:
 - Fixed: `client_id`, `model`
 - Per mode: `{prefix}_initial_score`, `{prefix}_score`, `{prefix}_confidence`, `{prefix}_review_decision`, `{prefix}_revision_count`
-- Column prefixes: `int` (intrinsic), `hier` (hierarchical), `ctx` (context_engineered), `llm` (llm_context)
 - Pairwise deltas: `int_hier_delta`, `int_ctx_delta`, etc.
 
 **Multiple runs for variance:** Use `--run-id` to separate replicates. Use `--model` to separate model conditions. Each combination gets its own directory and summary CSV.
@@ -253,6 +265,41 @@ results/
 **Resumability:** Skips clients where ALL requested modes are complete in summary.csv. A client with partial mode data (e.g. only intrinsic) is NOT skipped — it will be reprocessed for missing modes. Use `--force` to wipe and restart.
 
 **Error isolation:** Each mode invocation is try/except. Errors save `{"client_id": "...", "error": "..."}` to JSON and write `ERROR` to the CSV row.
+
+## Holdout Experiment (`01_build_dataset.py --holdout-group`)
+
+Tests OOD generalisation: withholds one trap group from the train set so rule-synthesis artefacts never see it, then evaluates on the unchanged test set. Performance on the held-out group is a pure out-of-distribution test.
+
+```bash
+# 1. Build holdout train set (writes train_holdout{group}_* files, does NOT overwrite train_*)
+python 01_build_dataset.py --dataset train --holdout-group D2   # any of C1,C2,C3,C4,D1,D2
+
+# 2. Run intrinsic on holdout train set (--dataset-prefix overrides the file prefix)
+python 02_run_experiment.py --dataset train --modes intrinsic --dataset-prefix train_holdoutd2_
+
+# 3. Export traces from holdout run (ground-truth must match holdout prefix)
+python 04_export_traces.py \
+  --results-dir results/train/{model}/run_1/intrinsic \
+  --ground-truth train_holdoutd2_ground_truth.csv \
+  --output-dir training_traces_{model}_holdoutd2
+
+# 4a. Re-run Kayba on holdout traces → external_agent_injection_{model}_holdoutd2.txt
+# 4b. Re-run LLM rules → llm_context_rules_{model}_holdoutd2.txt
+
+# 5. Run all modes on TEST set (unchanged) — artefacts auto-selected via _model_artefact_path()
+python 02_run_experiment.py --dataset test \
+  --modes intrinsic hierarchical context_engineered llm_context \
+  --model {model} --run-id run_holdoutd2
+
+# 6. Evaluate — annotates OOD group in per-group table, logs holdout_group param to MLflow
+python 03_evaluate.py --dataset test --model {model} --run-id run_holdoutd2 --holdout-group D2
+```
+
+**Key implementation details:**
+- `01_build_dataset.py`: `--holdout-group` zeros `N_*` counts for the specified group; dataset prefix becomes `train_holdout{group}_` automatically.
+- `02_run_experiment.py`: `--dataset-prefix` overrides the default `{dataset}_` prefix for all file reads. Required for holdout train runs.
+- `03_evaluate.py`: `--holdout-group` annotates the OOD group in per-group output with `*** OOD ***` and logs `holdout_group` to MLflow.
+- Holdout artefacts use naming convention `{base}_{model}_holdout{group}.txt`; `_model_artefact_path()` does NOT auto-select these — pass them manually or swap the active artefact files.
 
 ## Trace Export & Kayba Integration (`04_export_traces.py`)
 
@@ -289,6 +336,45 @@ LLM_MODEL=grok-4 python 05_generate_llm_context_rules.py --traces-dir training_t
 - Output filename defaults to `llm_context_rules_{model}.txt` (model-specific)
 - xAI/Grok models routed to xAI API automatically (same `grok-` prefix detection as `agents.py`)
 - **Rule quality depends on training error density**: near-zero training errors (e.g. grok-4: 2/86) produce poorly calibrated rules — the synthesis lacks failure signal
+
+## Statistical Significance Tests (`07_significance_tests.py`)
+
+Runs three tests against `evaluation.csv` to assess whether mode differences are statistically significant.
+
+```bash
+python 07_significance_tests.py                          # gpt-4o-mini, run_1
+python 07_significance_tests.py --model gpt-5.1 --run-id 1
+```
+
+- **Cochran's Q** — omnibus test: are any of the 4 modes different in binary correct/incorrect?
+- **McNemar's** — pairwise tests with Bonferroni correction
+- **Bootstrap CIs** — 95% confidence intervals on F1 per mode (N=10,000, seed=42)
+
+Reads `results/{dataset}/{model}/run_{run_id}/evaluation.csv`. Prints results to stdout; no MLflow logging.
+
+## Revision Depth Ablation (`08_revision_depth_experiment.py` + `09_analyze_revision_depth.py`)
+
+Tests whether performance changes as `MAX_REVISIONS` increases beyond the baseline of 2. Self-contained: defines its own graph builder, does not modify existing code.
+
+```bash
+# Run ablation (default: depths 0–10, gpt-4o-mini)
+python 08_revision_depth_experiment.py
+python 08_revision_depth_experiment.py --depths 0 2 5 10   # custom depths
+python 08_revision_depth_experiment.py --model gpt-4o-mini --run-id 1 --force
+
+# Analyse results and log to MLflow
+python 09_analyze_revision_depth.py
+python 09_analyze_revision_depth.py --model gpt-4o-mini --run-id 1 --no-mlflow
+```
+
+**Output structure:**
+```
+results/revision_depth/{model}/run_{run_id}/
+  depth_{N}/{client_id}.json
+  summary.csv
+```
+
+**Cost note:** Depths 0–10 add ~4–5× the cost of a single intrinsic run (most clients APPROVE early so actual call counts are lower than the theoretical maximum).
 
 ## Full Experiment Workflow
 
