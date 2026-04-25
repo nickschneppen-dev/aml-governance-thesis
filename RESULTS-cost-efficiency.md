@@ -24,12 +24,8 @@ GENERATION node. The 6.3 GB Langfuse observations export was streamed with `ijso
 | Model | Input (per 1M tokens) | Output (per 1M tokens) | Source |
 |---|---:|---:|---|
 | `gpt-4o-mini-2024-07-18` | $0.150 | $0.600 | OpenAI published |
-| `gpt-5.1-2025-11-13` | $2.50 | $10.00 | **Estimate — verify** |
-| `grok-4-0709` | $3.00 | $15.00 | **Estimate — verify** |
-
-> ⚠ The gpt-5.1 and grok-4 pricing rows are estimates set at script authoring time. All absolute cost
-> figures in this file scale linearly with pricing — update `10_cost_analysis.py` if you have confirmed
-> rates and re-run with `--skip-stream` for instant recalculation.
+| `gpt-5.1-2025-11-13` | $1.25 | $10.00 | Confirmed |
+| `grok-4-0709` | $2.00 | $6.00 | Confirmed |
 
 ### Dataset
 
@@ -82,23 +78,23 @@ GENERATION node. The 6.3 GB Langfuse observations export was streamed with `ijso
 
 | Mode | gpt-4o-mini | gpt-5.1 | grok-4 |
 |---|:---:|:---:|:---:|
-| **Intrinsic** | $0.0024 | $0.0482 | $0.0547 |
-| **Hierarchical** | $0.0021 | $0.0355 | $0.0602 |
-| **Context-Eng** | $0.0053 | $0.1382 | $0.1511 |
-| **LLM-Context** | $0.0042 | $0.1083 | $0.1057 |
-| **Hier+Ctx** | $0.0035 | $0.0932 | $0.0948 |
-| **Hier+LLM** | $0.0026 | $0.0631 | $0.0930 |
+| **Intrinsic** | $0.0024 | $0.0397 | $0.0271 |
+| **Hierarchical** | $0.0021 | $0.0307 | $0.0292 |
+| **Context-Eng** | $0.0053 | $0.0934 | $0.0847 |
+| **LLM-Context** | $0.0042 | $0.0775 | $0.0559 |
+| **Hier+Ctx** | $0.0035 | $0.0697 | $0.0486 |
+| **Hier+LLM** | $0.0026 | $0.0497 | $0.0462 |
 
 ### 3b. Total Cost to Classify All 168 Test Clients (USD)
 
 | Mode | gpt-4o-mini | gpt-5.1 | grok-4 |
 |---|:---:|:---:|:---:|
-| **Intrinsic** | $0.41 | $8.09 | $9.19 |
-| **Hierarchical** | $0.36 | $5.97 | $10.12 |
-| **Context-Eng** | $0.89 | $23.23 | $25.39 |
-| **LLM-Context** | $0.70 | $18.20 | $17.75 |
-| **Hier+Ctx** | $0.59 | $15.66 | $15.93 |
-| **Hier+LLM** | $0.43 | $10.60 | $15.63 |
+| **Intrinsic** | $0.41 | $6.67 | $4.55 |
+| **Hierarchical** | $0.36 | $5.15 | $4.90 |
+| **Context-Eng** | $0.89 | $15.68 | $14.23 |
+| **LLM-Context** | $0.70 | $13.02 | $9.38 |
+| **Hier+Ctx** | $0.59 | $11.72 | $8.17 |
+| **Hier+LLM** | $0.43 | $8.35 | $7.76 |
 
 ### 3c. Relative Cost vs gpt-4o-mini Intrinsic (Cheapest Baseline)
 
@@ -106,12 +102,12 @@ gpt-4o-mini intrinsic ($0.0024/case) = 1×.
 
 | Mode | gpt-5.1 relative | grok-4 relative |
 |---|:---:|:---:|
-| Intrinsic | 20× | 23× |
-| Hierarchical | 15× | 25× |
-| Context-Eng | 58× | 63× |
-| LLM-Context | 45× | 44× |
-| Hier+Ctx | 39× | 40× |
-| Hier+LLM | 26× | 39× |
+| Intrinsic | 17× | 11× |
+| Hierarchical | 13× | 12× |
+| Context-Eng | 39× | 35× |
+| LLM-Context | 32× | 23× |
+| Hier+Ctx | 29× | 20× |
+| Hier+LLM | 21× | 19× |
 
 ---
 
@@ -127,51 +123,51 @@ gpt-4o-mini intrinsic ($0.0024/case) = 1×.
 | gpt-4o-mini | LLM-Context | 166 | 56 | 57 | 51 | 2 | 0.655 | 64.5% | $0.0042 |
 | gpt-4o-mini | Hier+Ctx | 168 | 59 | 102 | 6 | 1 | 0.534 | 38.7% | $0.0035 |
 | gpt-4o-mini | Hier+LLM | 168 | 59 | 95 | 13 | 1 | 0.551 | 42.9% | $0.0026 |
-| gpt-5.1 | Intrinsic | 168 | 49 | 2 | 106 | 11 | 0.883 | 92.3% | $0.0482 |
-| gpt-5.1 | Hierarchical | 168 | 47 | 3 | 105 | 13 | 0.855 | 90.5% | $0.0355 |
-| gpt-5.1 | Context-Eng | 167 | 52 | 0 | 107 | 8 | 0.929 | 95.2% | $0.1382 |
-| gpt-5.1 | LLM-Context | 168 | 60 | 0 | 108 | 0 | **1.000** | **100.0%** | $0.1083 |
-| gpt-5.1 | Hier+Ctx | 168 | 50 | 0 | 108 | 10 | 0.909 | 94.0% | $0.0932 |
-| gpt-5.1 | Hier+LLM | 167 | 57 | 1 | 107 | 2 | 0.974 | 97.6% | $0.0631 |
-| grok-4 | Intrinsic | 169 | 59 | 8 | 100 | 2 | 0.922 | 94.1% | $0.0547 |
-| grok-4 | Hierarchical | 168 | 56 | 10 | 98 | 4 | 0.889 | 91.7% | $0.0602 |
-| grok-4 | Context-Eng | 168 | 55 | 3 | 105 | 5 | 0.932 | 95.2% | $0.1511 |
-| grok-4 | LLM-Context | 169 | 61 | 27 | 81 | 0 | 0.819 | 83.9% | $0.1057 |
-| grok-4 | Hier+Ctx | 168 | 54 | 3 | 105 | 6 | 0.923 | 94.6% | $0.0948 |
-| grok-4 | Hier+LLM | 167 | 60 | 23 | 84 | 0 | 0.839 | 86.2% | $0.0930 |
+| gpt-5.1 | Intrinsic | 168 | 49 | 2 | 106 | 11 | 0.883 | 92.3% | $0.0397 |
+| gpt-5.1 | Hierarchical | 168 | 47 | 3 | 105 | 13 | 0.855 | 90.5% | $0.0307 |
+| gpt-5.1 | Context-Eng | 167 | 52 | 0 | 107 | 8 | 0.929 | 95.2% | $0.0934 |
+| gpt-5.1 | LLM-Context | 168 | 60 | 0 | 108 | 0 | **1.000** | **100.0%** | $0.0775 |
+| gpt-5.1 | Hier+Ctx | 168 | 50 | 0 | 108 | 10 | 0.909 | 94.0% | $0.0697 |
+| gpt-5.1 | Hier+LLM | 167 | 57 | 1 | 107 | 2 | 0.974 | 97.6% | $0.0497 |
+| grok-4 | Intrinsic | 169 | 59 | 8 | 100 | 2 | 0.922 | 94.1% | $0.0271 |
+| grok-4 | Hierarchical | 168 | 56 | 10 | 98 | 4 | 0.889 | 91.7% | $0.0292 |
+| grok-4 | Context-Eng | 168 | 55 | 3 | 105 | 5 | 0.932 | 95.2% | $0.0847 |
+| grok-4 | LLM-Context | 169 | 61 | 27 | 81 | 0 | 0.819 | 83.9% | $0.0559 |
+| grok-4 | Hier+Ctx | 168 | 54 | 3 | 105 | 6 | 0.923 | 94.6% | $0.0486 |
+| grok-4 | Hier+LLM | 167 | 60 | 23 | 84 | 0 | 0.839 | 86.2% | $0.0462 |
 
 ### 4b. Cost per Correctly Identified Launderer (Cost / TP)
 
 | Mode | gpt-4o-mini | gpt-5.1 | grok-4 |
 |---|:---:|:---:|:---:|
-| **Intrinsic** | $0.0080 | $0.1652 | $0.1568 |
-| **Hierarchical** | $0.0062 | $0.1270 | $0.1807 |
-| **Context-Eng** | $0.0168 | $0.4440 | $0.4615 |
-| **LLM-Context** | $0.0124 | $0.3033 | $0.2927 |
-| **Hier+Ctx** | $0.0100 | $0.3132 | $0.2951 |
-| **Hier+LLM** | $0.0073 | $0.1849 | $0.2589 |
+| **Intrinsic** | $0.0080 | $0.1362 | $0.0772 |
+| **Hierarchical** | $0.0062 | $0.1096 | $0.0875 |
+| **Context-Eng** | $0.0168 | $0.3016 | $0.2588 |
+| **LLM-Context** | $0.0124 | $0.2170 | $0.1538 |
+| **Hier+Ctx** | $0.0100 | $0.2343 | $0.1513 |
+| **Hier+LLM** | $0.0073 | $0.1465 | $0.1294 |
 
 ### 4c. Cost per Correct Decision (Cost / (TP + TN))
 
 | Mode | gpt-4o-mini | gpt-5.1 | grok-4 |
 |---|:---:|:---:|:---:|
-| **Intrinsic** | $0.0051 | $0.0522 | $0.0582 |
-| **Hierarchical** | $0.0044 | $0.0393 | $0.0657 |
-| **Context-Eng** | $0.0109 | $0.1452 | $0.1587 |
-| **LLM-Context** | $0.0065 | $0.1083 | $0.1258 |
-| **Hier+Ctx** | $0.0090 | $0.0991 | $0.1002 |
-| **Hier+LLM** | $0.0060 | $0.0642 | $0.1079 |
+| **Intrinsic** | $0.0051 | $0.0431 | $0.0286 |
+| **Hierarchical** | $0.0044 | $0.0339 | $0.0318 |
+| **Context-Eng** | $0.0109 | $0.0986 | $0.0890 |
+| **LLM-Context** | $0.0065 | $0.0775 | $0.0661 |
+| **Hier+Ctx** | $0.0090 | $0.0741 | $0.0514 |
+| **Hier+LLM** | $0.0060 | $0.0509 | $0.0539 |
 
 ### 4d. F1 per Dollar × 1000 (Higher = More Cost-Efficient)
 
 | Mode | gpt-4o-mini | gpt-5.1 | grok-4 |
 |---|:---:|:---:|:---:|
-| **Intrinsic** | 0.222 | 0.018 | 0.017 |
-| **Hierarchical** | **0.273** | 0.024 | 0.015 |
-| **Context-Eng** | 0.104 | 0.007 | 0.006 |
-| **LLM-Context** | 0.156 | **0.009** | 0.008 |
-| **Hier+Ctx** | 0.153 | 0.010 | 0.010 |
-| **Hier+LLM** | 0.212 | **0.015** | 0.009 |
+| **Intrinsic** | 0.222 | 0.022 | **0.034** |
+| **Hierarchical** | **0.273** | **0.028** | 0.030 |
+| **Context-Eng** | 0.104 | 0.010 | 0.011 |
+| **LLM-Context** | 0.156 | 0.013 | 0.015 |
+| **Hier+Ctx** | 0.153 | 0.013 | 0.019 |
+| **Hier+LLM** | 0.212 | 0.020 | 0.018 |
 
 ---
 
@@ -221,13 +217,13 @@ The input token excess for Context-Eng vs Intrinsic isolates the playbook inject
 | Model | Intrinsic input | Context-Eng input | Playbook overhead | Overhead cost/case |
 |---|:---:|:---:|:---:|:---:|
 | gpt-4o-mini | 10,528 | 28,908 | +18,380 tokens | +$0.0028 |
-| gpt-5.1 | 6,763 | 35,908 | +29,145 tokens | +$0.0729 |
-| grok-4 | 6,522 | 30,357 | +23,835 tokens | +$0.0715 |
+| gpt-5.1 | 6,763 | 35,908 | +29,145 tokens | +$0.0364 |
+| grok-4 | 6,522 | 30,357 | +23,835 tokens | +$0.0477 |
 
-The Kayba playbook costs roughly $0.07 per case to inject for capable models — even before any
-revision overhead. This is the floor cost for Context-Eng regardless of classification outcome.
-For gpt-5.1, that $0.07/case injection buys a meaningful performance gain (F1: 0.883 → 0.929);
-for grok-4, it buys marginally less (F1: 0.921 → 0.932), making the return-on-injection
+The Kayba playbook costs roughly $0.04–$0.05 per case to inject for capable models — even before
+any revision overhead. This is the floor cost for Context-Eng regardless of classification outcome.
+For gpt-5.1, that $0.04/case injection buys a meaningful performance gain (F1: 0.883 → 0.929);
+for grok-4, it buys marginally less (F1: 0.922 → 0.932), making the return-on-injection
 substantially lower.
 
 ### 6c. Hierarchical architecture as a context-window cost reduction
@@ -244,8 +240,8 @@ visible in no-revision input tokens:
 At this level they are nearly identical (both receive the same structured summary). The cost
 advantage of Hierarchical emerges primarily from its lower rejection rate — not from a fundamental
 per-call token reduction. Since capable-model auditors almost never reject (gpt-5.1: 4% rejection,
-grok-4: 18% rejection), they avoid most revision overhead, making Hierarchical the cheapest capable-
-model mode despite each call being structurally similar in cost to Intrinsic.
+grok-4: 18% rejection), they avoid most revision overhead, making Hierarchical a cheaper capable-
+model path despite each call being structurally similar in cost to Intrinsic.
 
 ### 6d. Hier+Ctx vs Context-Eng: the fresh-context playbook advantage
 
@@ -264,13 +260,13 @@ substantially cheaper than Context-Eng despite offering equivalent rule injectio
 
 | | gpt-5.1 cost | gpt-5.1 F1 | grok-4 cost | grok-4 F1 |
 |---|:---:|:---:|:---:|:---:|
-| Context-Eng | $0.1382 | 0.929 | $0.1511 | 0.932 |
-| **Hier+Ctx** | **$0.0932** | 0.909 | **$0.0948** | 0.923 |
-| Saving | 33% cheaper | −0.020 F1 | 37% cheaper | −0.009 F1 |
+| Context-Eng | $0.0934 | 0.929 | $0.0847 | 0.932 |
+| **Hier+Ctx** | **$0.0697** | 0.909 | **$0.0486** | 0.923 |
+| Saving | 25% cheaper | −0.020 F1 | 43% cheaper | −0.009 F1 |
 
-For grok-4, paying 37% less for a loss of less than 1 F1 point (0.932 → 0.923) makes Hier+Ctx the
-stronger cost-performance choice. For gpt-5.1, the 33% saving comes at a 2-point F1 loss, which
-may or may not be acceptable depending on whether you require zero false positives.
+For grok-4, paying 43% less for a loss of less than 1 F1 point (0.932 → 0.923) makes Hier+Ctx
+the stronger cost-performance choice. For gpt-5.1, the 25% saving comes at a 2-point F1 loss,
+which may or may not be acceptable depending on whether you require zero false positives.
 
 ### 6e. LLM-Context is cheaper than Context-Eng because the rules are shorter
 
@@ -284,7 +280,7 @@ overhead:
 | LLM rules are shorter by | 37% | 39% | 56% |
 
 This makes LLM-Context meaningfully cheaper per case than Context-Eng. The practical consequence
-is that gpt-5.1 LLM-Context (the best-performing mode, F1=1.000) is also $0.0299/case cheaper
+is that gpt-5.1 LLM-Context (the best-performing mode, F1=1.000) is also $0.0159/case cheaper
 than gpt-5.1 Context-Eng (F1=0.929). You pay less and get better performance — the LLM-
 synthesised rules are both shorter and more effective at gpt-5.1's capability level.
 
@@ -310,9 +306,8 @@ is consumed by revision cycles that correct fewer than 5% of cases. The effectiv
 outcome improvement is extremely poor.
 
 Contrast with **gpt-5.1 Hierarchical**: 96% of cases need no revision (6.9% revision overhead).
-The auditor reviews once and almost always approves. Total cost: $0.0355/case. This is the
-cheapest capable-model path, though the auditor's passivity means it misses 13 FNs that Intrinsic
-also misses.
+The auditor reviews once and almost always approves. Total cost: $0.0307/case. This is one of the
+cheapest capable-model paths, though the auditor's passivity means it misses 13 FNs.
 
 ### 7b. Revision multiplier: cost of a revised case vs a first-pass approval
 
@@ -323,14 +318,14 @@ prompt. The multiplier grows with the length of that accumulation:
 | Model + Mode | First-pass cost | Revised case cost | Multiplier |
 |---|:---:|:---:|:---:|
 | gpt-4o-mini Intrinsic | $0.0008 | $0.0026 | 3.3× |
-| gpt-4o-mini Context-Eng | $0.0011 | $0.0055 | 5.0× |
-| gpt-5.1 Intrinsic | $0.0338 | $0.0888 | 2.6× |
-| gpt-5.1 Context-Eng | $0.0562 | $0.1819 | 3.2× |
-| grok-4 Intrinsic | $0.0453 | $0.1045 | 2.3× |
-| grok-4 Context-Eng | $0.0640 | $0.2645 | 4.1× |
+| gpt-4o-mini Context-Eng | $0.0011 | $0.0055 | 5.1× |
+| gpt-5.1 Intrinsic | $0.0291 | $0.0697 | 2.4× |
+| gpt-5.1 Context-Eng | $0.0415 | $0.1210 | 2.9× |
+| grok-4 Intrinsic | $0.0222 | $0.0528 | 2.4× |
+| grok-4 Context-Eng | $0.0331 | $0.1520 | 4.6× |
 
-grok-4 Context-Eng is the extreme case: a revised client costs **$0.2645** — 4.1× the $0.0640
-base case cost, and 10× the grok-4 Intrinsic first-pass cost. The Kayba playbook sits in the
+grok-4 Context-Eng is the extreme case: a revised client costs **$0.1520** — 4.6× the $0.0331
+base case cost, and nearly 7× the grok-4 Intrinsic first-pass cost. The Kayba playbook sits in the
 growing context window across every revision cycle, compounding its token overhead with each pass.
 
 ### 7c. The revision depth ablation confirms this: fewer revisions is better and cheaper
@@ -348,23 +343,23 @@ primary cost driver, and removing it would simultaneously reduce cost by 67% and
 
 ### 8a. gpt-4o-mini's paradox: cheapest per case, worst return on spend
 
-gpt-4o-mini is 15–60× cheaper per case than capable models. But its accuracy is so low that most
+gpt-4o-mini is 11–39× cheaper per case than capable models. But its accuracy is so low that most
 of the spend goes to producing wrong answers:
 
 | Model + Mode | Cost for 168 clients | Correct decisions | Cost per correct decision |
 |---|:---:|:---:|:---:|
 | gpt-4o-mini Hierarchical | $0.36 | 81 | $0.0044 |
-| gpt-4o-mini LLM-Context | $0.70 | 108 | $0.0065 |
-| gpt-5.1 Hierarchical | $5.97 | 152 | $0.0393 |
-| gpt-5.1 Intrinsic | $8.09 | 155 | $0.0522 |
-| gpt-5.1 Hier+LLM | $10.60 | 164 | **$0.0642** |
-| gpt-5.1 LLM-Context | $18.20 | 168 | $0.1083 |
-| grok-4 Intrinsic | $9.19 | 159 | $0.0582 |
-| grok-4 Context-Eng | $25.39 | 160 | $0.1587 |
+| gpt-4o-mini LLM-Context | $0.70 | 107 | $0.0065 |
+| grok-4 Intrinsic | $4.55 | 159 | $0.0286 |
+| gpt-5.1 Hierarchical | $5.15 | 152 | $0.0339 |
+| gpt-5.1 Intrinsic | $6.67 | 155 | $0.0431 |
+| gpt-5.1 Hier+LLM | $8.35 | 164 | **$0.0509** |
+| gpt-5.1 LLM-Context | $13.02 | 168 | $0.0775 |
+| grok-4 Context-Eng | $14.23 | 160 | $0.0890 |
 
 gpt-4o-mini Hierarchical costs $0.0044 per correct decision, appearing extremely efficient. But
 this obscures that 87 of those decisions are wrong — it correctly classifies 81/168 clients, barely
-better than chance. gpt-5.1 Hierarchical costs $0.0393 per correct decision but gets 155/168 right.
+better than chance. grok-4 Intrinsic costs $0.0286 per correct decision and gets 159/168 right.
 The apparent cost efficiency of gpt-4o-mini dissolves once the error rate is factored in.
 
 ### 8b. The cost-performance frontier
@@ -375,69 +370,74 @@ point is both cheaper and better):
 | Model + Mode | Cost/case | F1 | On frontier? | Notes |
 |---|:---:|:---:|:---:|---|
 | gpt-4o-mini LLM-Context | $0.0042 | 0.655 | ✅ | Best F1 in this price range |
-| gpt-5.1 Hierarchical | $0.0355 | 0.855 | ✅ | Cheapest capable-model option |
-| gpt-5.1 Intrinsic | $0.0482 | 0.883 | ✅ | Better than Hier at moderate cost |
-| gpt-5.1 Hier+LLM | $0.0631 | 0.974 | ✅ | Best F1 under $0.10/case |
-| gpt-5.1 Hier+Ctx | $0.0932 | 0.909 | ❌ | Dominated by Hier+LLM |
-| gpt-5.1 LLM-Context | $0.1083 | 1.000 | ✅ | Perfect F1 — efficiency ceiling |
-| grok-4 Intrinsic | $0.0547 | 0.922 | ❌ | Dominated by gpt-5.1 Intrinsic ($0.0482, F1=0.883) vs gpt-5.1 Hier+LLM ($0.0631, F1=0.974) |
-| grok-4 Context-Eng | $0.1511 | 0.932 | ❌ | Dominated by gpt-5.1 LLM-Context |
+| grok-4 Intrinsic | $0.0271 | 0.922 | ✅ | **Cheapest capable-model option** |
+| grok-4 Hier+Ctx | $0.0486 | 0.923 | ✅ | Marginally higher F1 at 79% cost premium over grok-4 Intrinsic |
+| gpt-5.1 Hier+LLM | $0.0497 | 0.974 | ✅ | Best F1 under $0.08/case |
+| gpt-5.1 Hier+Ctx | $0.0697 | 0.909 | ❌ | Dominated by gpt-5.1 Hier+LLM |
+| gpt-5.1 LLM-Context | $0.0775 | 1.000 | ✅ | Perfect F1 — efficiency ceiling |
+| gpt-5.1 Hierarchical | $0.0307 | 0.855 | ❌ | Dominated by grok-4 Intrinsic (cheaper, higher F1) |
+| gpt-5.1 Intrinsic | $0.0397 | 0.883 | ❌ | Dominated by grok-4 Intrinsic (cheaper, higher F1) |
+| grok-4 Context-Eng | $0.0847 | 0.932 | ❌ | Dominated by gpt-5.1 Hier+LLM |
 
 The key dominance relationships:
-- **gpt-5.1 Hierarchical ($0.0355, F1=0.855)** is strictly better than all gpt-4o-mini modes on
-  F1 and only 8.5× more expensive per case (not 15–60×, because it almost never revises).
-- **gpt-5.1 Hier+LLM ($0.0631, F1=0.974)** is the standout: near-perfect classification at
+- **grok-4 Intrinsic ($0.0271, F1=0.922)** is the cheapest capable-model entry point on the
+  frontier. With output tokens repriced at $6/1M (vs the previous estimate of $15/1M), grok-4's
+  low revision rate (16% of cases revised) keeps its mean cost below all gpt-5.1 modes. Critically,
+  it dominates both gpt-5.1 Hierarchical and gpt-5.1 Intrinsic — it is cheaper than both and has
+  higher F1 than both.
+- **gpt-5.1 Hier+LLM ($0.0497, F1=0.974)** is the standout: near-perfect classification at
   moderate cost. LLM-synthesised rules on a fresh hierarchical context produce 57 TPs with only
   1 FP and 2 FNs — and the short LLM rules keep the injection overhead low.
-- **gpt-5.1 LLM-Context ($0.1083, F1=1.000)** is the efficiency ceiling: perfect classification,
-  but at 3× the cost of Hier+LLM. The additional 3 TPs recovered (57→60) and the 1 FP eliminated
-  costs $47.60 extra for the full 168-client set.
-- **All grok-4 modes are off the frontier**: grok-4 is comparable in capability to gpt-5.1 but
-  costs slightly more per case (higher output token prices at $15/1M vs $10/1M for gpt-5.1) while
-  generally achieving similar or lower F1. Its only advantage is that Context-Eng and Hier+Ctx
-  perform very similarly (F1: 0.932 vs 0.923), making the architecture choice irrelevant at
-  this capability level.
+- **gpt-5.1 LLM-Context ($0.0775, F1=1.000)** is the efficiency ceiling: perfect classification,
+  but at 56% more than Hier+LLM. The additional 3 TPs recovered (57→60) and the 1 FP eliminated
+  costs $4.67 extra for the full 168-client set.
+- **grok-4 Hier+Ctx ($0.0486, F1=0.923)** is technically on the frontier but practically
+  unattractive: it costs 79% more than grok-4 Intrinsic for a 0.001 F1 gain. Its only use case
+  is if you want Kayba-style rule injection on grok-4 and care about the slight edge over bare
+  intrinsic performance.
+- **All gpt-5.1 modes except Hier+LLM and LLM-Context fall off the frontier**: the revised
+  grok-4 pricing makes grok-4 Intrinsic cheaper and better than gpt-5.1 Hierarchical and
+  gpt-5.1 Intrinsic outright.
 
 ### 8c. The cross-model capability jump vs the cost jump
 
-A common framing: is paying 20× more for gpt-5.1 over gpt-4o-mini "worth it"? The token data
-makes this concrete:
+A common framing: is paying more for a capable model "worth it"? The token data makes this concrete:
 
-- gpt-4o-mini Intrinsic: $0.0024/case, F1=0.534 → $8.09 total, 79 correct decisions
-- gpt-5.1 Intrinsic: $0.0482/case, F1=0.883 → $8.09 total, **155 correct decisions**
+- gpt-4o-mini Intrinsic: $0.0024/case, F1=0.534 → $0.41 total, 79 correct decisions
+- gpt-5.1 Intrinsic: $0.0397/case, F1=0.883 → $6.67 total, 155 correct decisions
+- **grok-4 Intrinsic: $0.0271/case, F1=0.922 → $4.55 total, 159 correct decisions**
 
-At the **same total budget** ($8.09), you can run gpt-5.1 Intrinsic on all 168 clients OR
-gpt-4o-mini Intrinsic on 3,371 clients. But if your task is AML classification on a fixed
-client list, the gpt-5.1 run classifies 76 more clients correctly — nearly doubling accuracy.
-The F1 gain (+0.349) from switching models costs $0.0458/case additional, or about $7.68 for
-the full test set. This is a very favourable cost-performance trade for any real deployment.
+At the **same total budget** ($6.67), you can run gpt-5.1 Intrinsic on all 168 clients OR
+gpt-4o-mini Intrinsic on 2,779 clients. But grok-4 Intrinsic runs all 168 clients for only $4.55
+with even higher F1. The F1 gain (+0.349 over gpt-4o-mini) from switching to gpt-5.1 costs
+$0.0373/case additional; grok-4 buys +0.388 F1 for only $0.0247/case additional.
 
-The trade-off for gpt-4o-mini LLM-Context (best gpt-4o-mini mode, F1=0.655) vs gpt-5.1
-Hierarchical (cheapest capable mode, F1=0.855): paying $0.0355 vs $0.0042 — 8.5× more — buys
-+0.200 F1 and 47 more correct decisions. For an AML system where each missed launderer carries
-regulatory and financial risk, this gap is almost certainly worth closing.
+The trade-off for gpt-4o-mini LLM-Context (best gpt-4o-mini mode, F1=0.655) vs grok-4 Intrinsic
+(cheapest capable mode, F1=0.922): paying $0.0271 vs $0.0042 — 6.5× more — buys +0.267 F1 and
+52 more correct decisions. For an AML system where each missed launderer carries regulatory and
+financial risk, this gap is almost certainly worth closing.
 
 ---
 
 ## 9. Interpretation: Practical Deployment Implications
 
-### 9a. The Kayba playbook injection is cost-prohibitive at capable-model pricing
+### 9a. The Kayba playbook injection cost at capable-model pricing
 
-Context-Eng adds $0.0729/case in gpt-5.1 input costs just for the playbook injection — before
-any revision overhead. Over 168 clients, that is $12.26 of the $23.23 total Context-Eng spend
+Context-Eng adds $0.0364/case in gpt-5.1 input costs just for the playbook injection — before
+any revision overhead. Over 168 clients, that is $6.12 of the $15.68 total Context-Eng spend
 that goes purely to carrying the playbook text. At scale (e.g., 10,000 monthly case reviews),
-Context-Eng would cost approximately $1,380 per month vs $482 for Intrinsic — a $898/month
-premium for the playbook injection alone.
+Context-Eng would cost approximately $934 per month vs $397 for Intrinsic — a $537/month
+premium, of which $364 is attributable to the playbook injection alone.
 
 Whether that premium is justified depends on the capability level. At gpt-5.1, Context-Eng buys
-F1: 0.883 → 0.929 (3 more FPs eliminated, 3 more TPs recovered). At grok-4, it buys F1: 0.921
-→ 0.932 (5 fewer FPs, 3 fewer TPs). The injection is buying increasingly small gains as base
-model capability increases.
+F1: 0.883 → 0.929 (2 FPs eliminated, 3 more TPs recovered). At grok-4, it buys F1: 0.922 → 0.932
+(5 fewer FPs, 4 fewer TPs). The injection is buying increasingly small gains as base model
+capability increases.
 
 **The efficient alternative**: Hier+Ctx injects the same playbook into a fresh hierarchical
-auditor context, achieving nearly identical F1 at 33–37% lower cost. For any deployment that
-wants Kayba-style rule injection, Hier+Ctx is strictly preferable to Context-Eng on
-cost grounds at gpt-5.1 and grok-4 capability levels.
+auditor context, achieving nearly identical F1 at 25% (gpt-5.1) or 43% (grok-4) lower cost.
+For any deployment that wants Kayba-style rule injection, Hier+Ctx is strictly preferable to
+Context-Eng on cost grounds at gpt-5.1 and grok-4 capability levels.
 
 ### 9b. gpt-5.1 Hier+LLM is the operational sweet spot
 
@@ -448,20 +448,25 @@ Based on the combined cost-performance picture:
 | F1 | 0.974 |
 | False positives | 1 |
 | False negatives | 2 |
-| Cost per case | $0.0631 |
-| Cost for 168 clients | $10.60 |
+| Cost per case | $0.0497 |
+| Cost for 168 clients | $8.35 |
 | Revision overhead | 22.7% |
 | Average calls per case | ~3.6 |
 
 It achieves near-perfect classification (missing only 2 launderers and flagging 1 innocent),
-costs a third of the LLM-Context ceiling, and carries only 22.7% revision overhead (vs 62–83%
+costs well under the LLM-Context ceiling, and carries only 22.7% revision overhead (vs 62–83%
 for the self-review modes with rules). The LLM-synthesised rules are short enough that the
 injection cost is moderate, and the fresh hierarchical context prevents playbook accumulation
 across revision cycles.
 
-If the requirement is **zero false negatives** (never miss a launderer), the only option is
-gpt-5.1 LLM-Context or gpt-5.1/grok-4 LLM-Context (which both hit 0 FNs) — but at $18–25 for
-168 clients. gpt-5.1 Hier+LLM misses 2 clients at less than half the cost.
+If the target is instead **minimising cost while retaining capable-model accuracy**, grok-4
+Intrinsic ($0.0271, F1=0.922) is the better choice — 46% cheaper than gpt-5.1 Hier+LLM with
+only a 0.052 F1 gap. The right choice depends on tolerance for the 2 missed launderers and
+1 false positive that gpt-5.1 Hier+LLM also carries.
+
+If the requirement is **zero false negatives** (never miss a launderer), the only options are
+gpt-5.1 LLM-Context or grok-4 LLM-Context (both hit 0 FNs) — at $9–13 for 168 clients.
+gpt-5.1 Hier+LLM misses 2 clients at roughly half to two-thirds the cost.
 
 ### 9c. gpt-4o-mini is unsuitable for production AML classification at any governance setting
 
@@ -477,29 +482,27 @@ revision loop is worse than not having one — and costs more.
 
 ### 9d. Context-Eng on grok-4 is the most expensive failure mode
 
-grok-4 Context-Eng: $0.1511/case, F1=0.932. 73 of 168 cases (43%) get at least one revision,
-and revised cases cost $0.2645 each. The Kayba playbook accumulates in the growing revision
-context, amplifying the per-revision cost. grok-4's intrinsic performance is already 0.921 —
-the 0.011 F1 gain from Context-Eng costs $0.1511 vs $0.0547, a 2.8× cost increase for a
+grok-4 Context-Eng: $0.0847/case, F1=0.932. 73 of 168 cases (43%) get at least one revision,
+and revised cases cost $0.1520 each. The Kayba playbook accumulates in the growing revision
+context, amplifying the per-revision cost. grok-4's intrinsic performance is already 0.922 —
+the 0.010 F1 gain from Context-Eng costs $0.0847 vs $0.0271, a 3.1× cost increase for a
 fractional gain. This is the worst cost-per-F1-point trade in the experiment.
 
 ---
 
 ## 10. Pricing Sensitivity
 
-All absolute cost figures depend on the pricing constants in `10_cost_analysis.py`. The
-relative ordering of conclusions is robust to moderate pricing changes, but the cross-model
-comparisons are sensitive to whether gpt-5.1 or grok-4 pricing differs substantially from
-the estimates used.
+All absolute cost figures depend on the pricing constants in `10_cost_analysis.py`. The pricing
+used in this document is confirmed ($1.25/$10.00 for gpt-5.1; $2.00/$6.00 for grok-4).
 
-### Impact of pricing uncertainty on key conclusions
+### Impact of pricing on key conclusions
 
 | Conclusion | Sensitivity |
 |---|---|
-| gpt-4o-mini is cheapest per case | **Robust** — would need gpt-5.1 to be 20× cheaper than estimated to change |
+| gpt-4o-mini is cheapest per case | **Robust** — would need gpt-5.1 or grok-4 to be 15× cheaper than current to change |
 | gpt-5.1 LLM-Context is on the Pareto frontier | **Robust** — driven by F1=1.000 regardless of absolute pricing |
-| gpt-5.1 Hier+LLM ($0.0631) is cheaper than Context-Eng ($0.1382) | **Robust** — relative ordering holds across 2× pricing variation |
-| grok-4 is off the Pareto frontier | **Moderately sensitive** — if grok-4 output tokens are cheaper than $15/1M, it could re-enter the frontier for Intrinsic mode |
+| gpt-5.1 Hier+LLM ($0.0497) is cheaper than Context-Eng ($0.0934) | **Robust** — relative ordering holds across 2× pricing variation |
+| grok-4 Intrinsic is on the Pareto frontier | **Sensitive to grok-4 output pricing** — at $6/1M grok-4 output, grok-4 Intrinsic dominates gpt-5.1 Intrinsic; at $15/1M (previous estimate) it did not |
 | Context-Eng revision cases are more expensive than LLM-Context revision cases | **Robust** — driven by playbook token counts (measurable), not pricing |
 
 To re-run with corrected pricing:
@@ -515,12 +518,13 @@ python 10_cost_analysis.py --skip-stream
 | Finding | Key number |
 |---|---|
 | Cheapest mode overall | gpt-4o-mini Hierarchical: $0.0021/case |
-| Cheapest capable-model mode | gpt-5.1 Hierarchical: $0.0355/case |
-| Best F1 at any cost | gpt-5.1 LLM-Context: F1=1.000 at $0.1083/case |
-| Best cost-performance balance | gpt-5.1 Hier+LLM: F1=0.974 at $0.0631/case |
-| Worst cost-performance trade | grok-4 Context-Eng: F1=0.932 at $0.1511/case (2.8× cost for 0.011 F1 gain over intrinsic) |
-| Token overhead from Kayba playbook | +18–29K input tokens per case; $0.07/case for capable models |
-| Max revision multiplier | grok-4 Context-Eng: revised cases cost 4.1× base |
+| Cheapest capable-model mode | grok-4 Intrinsic: $0.0271/case |
+| Best F1 at any cost | gpt-5.1 LLM-Context: F1=1.000 at $0.0775/case |
+| Best cost-performance balance | gpt-5.1 Hier+LLM: F1=0.974 at $0.0497/case |
+| Cheapest alternative with high accuracy | grok-4 Intrinsic: F1=0.922 at $0.0271/case |
+| Worst cost-performance trade | grok-4 Context-Eng: F1=0.932 at $0.0847/case (3.1× cost for 0.010 F1 gain over intrinsic) |
+| Token overhead from Kayba playbook | +18–29K input tokens per case; $0.04–$0.05/case for capable models |
+| Max revision multiplier | grok-4 Context-Eng: revised cases cost 4.6× base |
 | gpt-4o-mini revision overhead | 65–83% of total tokens from revision passes |
 | gpt-5.1 hierarchical revision overhead | 6.9% — almost never revises |
 | Real vs estimated cost proxy | Estimated LLM-call proxy (`3 + 2×revisions`) undercounts Context-Eng cost by 3–5× because it misses the playbook injection tokens |

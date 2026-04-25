@@ -40,11 +40,11 @@ PRICING: dict[str, dict[str, float]] = {
     # OpenAI  (https://openai.com/pricing)
     "gpt-4o-mini":              {"input": 0.150, "output": 0.600},
     "gpt-4o-mini-2024-07-18":   {"input": 0.150, "output": 0.600},
-    "gpt-5.1":                  {"input": 2.50,  "output": 10.00},   # verify
-    "gpt-5.1-2025-07-08":       {"input": 2.50,  "output": 10.00},   # verify
+    "gpt-5.1":                  {"input": 1.25,  "output": 10.00},
+    "gpt-5.1-2025-07-08":       {"input": 1.25,  "output": 10.00},
     # xAI Grok  (https://x.ai/api)
-    "grok-4":                   {"input": 3.00,  "output": 15.00},   # verify
-    "grok-4-0709":              {"input": 3.00,  "output": 15.00},
+    "grok-4":                   {"input": 2.00,  "output": 6.00},
+    "grok-4-0709":              {"input": 2.00,  "output": 6.00},
 }
 
 # Model name normalisation: API model string -> experiment model label
