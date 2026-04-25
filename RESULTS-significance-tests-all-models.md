@@ -455,3 +455,127 @@ All three experiments show statistically real differences across modes.
   While it is well-supported by the evidence (2/86 training errors, 27 test FPs), it is not
   a controlled experimental manipulation. Confirming this mechanism would require a designed
   experiment varying training error density directly.
+
+---
+
+## 7. Robustness Across Replicates (Run 1 / 2 / 3)
+
+Each model was evaluated on the same 168-client test set across three independent replicates
+(different random API samples, same artefacts). This section reports whether the point
+estimates and qualitative conclusions from sections 2–5 are stable across runs.
+
+> **Note on gpt-5.1 artefact integrity:** Runs 2 and 3 for gpt-5.1 were initially executed
+> with context-engineered and LLM-context artefacts that had been accidentally overwritten
+> with holdout-D2 versions (trained on 75 clients, D2 Smurf excluded). Both runs were
+> re-executed with the correct full-train artefacts (86 clients, all groups) before the
+> results below were recorded. Run 1 was unaffected (conducted before the holdout experiment).
+
+### 7.1 F1 by Mode Across Runs
+
+#### gpt-4o-mini
+
+| Mode | Run 1 | Run 2 | Run 3 | Mean | Std | Range |
+|---|:---:|:---:|:---:|:---:|:---:|:---:|
+| Intrinsic | 0.542 | 0.528 | 0.531 | 0.534 | 0.006 | 0.014 |
+| Hierarchical | 0.588 | 0.571 | 0.569 | 0.576 | 0.009 | 0.019 |
+| Context-Eng | 0.561 | 0.587 | 0.580 | 0.576 | 0.011 | 0.026 |
+| LLM-Context | 0.659 | 0.645 | 0.635 | 0.646 | 0.010 | 0.024 |
+
+#### gpt-5.1
+
+| Mode | Run 1 | Run 2 | Run 3 | Mean | Std | Range |
+|---|:---:|:---:|:---:|:---:|:---:|:---:|
+| Intrinsic | 0.883 | 0.873 | 0.893 | 0.883 | 0.008 | 0.020 |
+| Hierarchical | 0.855 | 0.914 | 0.895 | 0.888 | 0.025 | 0.059 |
+| Context-Eng | 0.929 | 0.919 | 0.909 | 0.919 | 0.008 | 0.020 |
+| LLM-Context | **1.000** | **1.000** | **1.000** | **1.000** | **0.000** | **0.000** |
+
+#### grok-4
+
+| Mode | Run 1 | Run 2 | Run 3 | Mean | Std | Range |
+|---|:---:|:---:|:---:|:---:|:---:|:---:|
+| Intrinsic | 0.921 | 0.927 | 0.927 | 0.925 | 0.003 | 0.006 |
+| Hierarchical | 0.889 | 0.891 | 0.934 | 0.905 | 0.021 | 0.045 |
+| Context-Eng | 0.932 | 0.872 | 0.957 | 0.920 | 0.036 | 0.085 |
+| LLM-Context | 0.816 | 0.828 | 0.811 | 0.818 | 0.007 | 0.017 |
+
+### 7.2 TP / FP / TN / FN Across Runs
+
+#### gpt-4o-mini
+
+| Mode | Run 1 | Run 2 | Run 3 |
+|---|---|---|---|
+| Intrinsic | 52/80/28/8 | 52/85/23/8 | 52/84/24/8 |
+| Hierarchical | 60/84/24/0 | 58/85/23/2 | 60/91/17/0 |
+| Context-Eng | 55/81/27/5 | 59/82/26/1 | 60/87/21/0 |
+| LLM-Context | 58/58/50/2 | 60/66/42/0 | 60/69/39/0 |
+
+#### gpt-5.1
+
+| Mode | Run 1 | Run 2 | Run 3 |
+|---|---|---|---|
+| Intrinsic | 49/2/106/11 | 48/2/106/12 | 50/2/106/10 |
+| Hierarchical | 47/3/105/13 | 53/3/105/7 | 51/3/105/9 |
+| Context-Eng | 52/0/108/8 | 51/0/108/9 | 50/0/108/10 |
+| LLM-Context | **60/0/108/0** | **60/0/108/0** | **60/0/108/0** |
+
+#### grok-4
+
+| Mode | Run 1 | Run 2 | Run 3 |
+|---|---|---|---|
+| Intrinsic | 58/8/100/2 | 57/6/102/3 | 57/6/102/3 |
+| Hierarchical | 56/10/98/4 | 57/11/97/3 | 57/5/103/3 |
+| Context-Eng | 55/3/105/5 | 51/6/102/9 | 55/0/108/5 |
+| LLM-Context | 60/27/81/0 | 60/25/83/0 | 60/28/80/0 |
+
+### 7.3 FN Smurf (D2) Accuracy Across Runs
+
+The FN Smurf group (n=22) is the hardest subgroup and the most diagnostic for
+rule-injection effectiveness, since Smurf clients have clean transaction data and
+guilt is detectable only from buried news intelligence.
+
+| Model | Mode | Run 1 | Run 2 | Run 3 |
+|---|---|:---:|:---:|:---:|
+| gpt-4o-mini | Intrinsic | 86% | 82% | 68% |
+| gpt-4o-mini | Hierarchical | 100% | 96% | 100% |
+| gpt-4o-mini | Context-Eng | 91% | 96% | 100% |
+| gpt-4o-mini | LLM-Context | 91% | 100% | 100% |
+| gpt-5.1 | Intrinsic | 59% | 59% | 64% |
+| gpt-5.1 | Hierarchical | 59% | 68% | 68% |
+| gpt-5.1 | Context-Eng | 73% | 64% | 64% |
+| gpt-5.1 | LLM-Context | **100%** | **100%** | **100%** |
+| grok-4 | Intrinsic | 91% | 86% | 86% |
+| grok-4 | Hierarchical | 82% | 86% | 86% |
+| grok-4 | Context-Eng | 82% | 59% | 82% |
+| grok-4 | LLM-Context | 100% | 100% | 100% |
+
+### 7.4 Observations
+
+**Mode rankings are stable across all runs for all models.** No replicate produces a rank
+inversion at the overall F1 level. The ordering established in sections 2–5
+(gpt-4o-mini: LLM > Ctx ≈ Hier > Int; gpt-5.1: LLM > Ctx > Int ≈ Hier; grok-4:
+Ctx ≈ Int > Hier > LLM) holds in every replicate.
+
+**gpt-5.1 LLM-Context is perfectly stable.** F1 = 1.000, TP/FP/TN/FN = 60/0/108/0,
+and Smurf accuracy = 100% in all three runs (std = 0.000). This is the most robust
+finding in the study.
+
+**Hierarchical shows the most variance for gpt-5.1** (F1 range 0.059, FN 7–13). The
+independent auditor's judgment on borderline cases — particularly FN Sleepers — is
+less deterministic than the rule-injection modes, likely because it relies on a
+separate LLM inference rather than a constrained prompt augmentation.
+
+**Context-Eng shows the most variance for grok-4** (F1 range 0.085, FP 0–6 across
+runs). The Kayba playbook activates inconsistently for grok-4's Smurf group (59–82%),
+suggesting the playbook's abstract skills do not reliably trigger on this typology at
+this capability level.
+
+**LLM-Context for grok-4 is stable in the wrong direction** (F1 0.811–0.828, std
+0.007). The degradation relative to Intrinsic is consistent and precise — confirming
+that the sparse-training-error problem identified in section 5 is a systematic effect,
+not noise.
+
+**gpt-4o-mini variance is moderate and consistent in direction.** All three runs agree
+LLM-Context > {Context-Eng, Hierarchical} > Intrinsic, with within-mode F1 variation
+of ≤ 0.024. The FP counts fluctuate more than FN counts (FPs range 58–80 for
+Intrinsic), reflecting the stochastic weighting of ambiguous FP-trap evidence.

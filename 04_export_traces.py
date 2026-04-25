@@ -335,10 +335,19 @@ def main() -> None:
     parser.add_argument(
         "--output-dir",
         type=Path,
-        default=Path("training_traces"),
-        help="Directory to write annotated .md files (default: training_traces/).",
+        default=None,
+        help="Directory to write annotated .md files (default: training_traces_{model}/ derived from --results-dir).",
     )
     args = parser.parse_args()
+
+    if args.output_dir is None:
+        # Derive model name from results-dir (expected: results/train/{model}/run_N/intrinsic)
+        parts = Path(args.results_dir).parts
+        try:
+            model = parts[parts.index("train") + 1]
+        except (ValueError, IndexError):
+            model = "unknown"
+        args.output_dir = Path(f"training_traces_{model}")
 
     export_traces(
         results_dir=args.results_dir,

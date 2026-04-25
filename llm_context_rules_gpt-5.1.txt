@@ -1,182 +1,241 @@
-[Rule 1]: When a single structural flag is fully explained by a strong business‑model “alibi,” down‑weight the flag sharply.  
+[Rule 1]: Do not treat “sub‑threshold but elevated” fan‑in/fan‑out as benign for individuals/gig workers/students  
 Applies when:  
-- Only one of the core quantitative heuristics is triggered (e.g., HIGH FAN-IN, HIGH FAN-OUT, or HIGH AVG TRANSACTION),  
-- And there is high‑quality qualitative evidence (regulator, government, reputable media) that this exact structural pattern is normal for the client’s business type (e.g., charities with many donors, payroll-heavy firms with many payees, cash businesses with large individual deposits).  
-Rationale:  
-- In nearly all false‑positive traps (charity, payroll, structurer, high‑roller groups), the agent correctly found a sector‑specific explanation and reduced risk.  
-- In the incorrect case, the agent recognised that an auction house could explain high fan-out but still kept the risk elevated instead of allowing the benign explanation to dominate.  
-- Future reasoning should treat a well‑supported business‑model alibi as the default interpretation, unless there are additional independent red flags (adverse news, multiple metrics triggered, high‑risk jurisdictions, etc.).
+- Retail / individual / student / gig‑worker / working‑holiday profiles with:  
+  - Fan‑in in the low–mid teens (e.g. 10–19) and/or  
+  - Fan‑out in the 30–80 range  
+  - Total volume <200k and Avg Amount <1k, and  
+  - No automated flags.  
+Rationale: In many false negatives (smurf/mule traps), fan‑in and fan‑out were “below hard thresholds” so the agent treated them as only mildly concerning and weighted them down. Ground truth shows these moderate but unusual network metrics are exactly where mule and smurfing activity hides for students, gig workers and pensioners, especially when mixed with legitimate flows. The agent should positively weight “sub‑threshold but anomalous for the demographic” rather than relaxing purely because hard cut‑offs are not breached.
 
 ---
 
-[Rule 2]: Do not treat “inherent sector risk” or “proposed regulation” as a stand‑alone reason to push a clean, well‑explained profile above low risk.  
+[Rule 2]: Compare fan‑in/fan‑out to *expected* counterparties for the demographic, not just to global thresholds  
 Applies when:  
-- Qualitative sources speak about sector‑wide vulnerabilities or proposed AML coverage (e.g., art dealers, lawyers, event managers, luxury hotels, casinos),  
-- But there is no entity‑specific adverse media or regulatory action, and  
-- The client’s transaction metrics are moderate and structurally well‑explained by the business model.  
-Rationale:  
-- In many correct cases (law firm trust accounts, mining, events, hotels, parking, auction‑like high‑roller clients) the agent allowed sector risk to keep scores at medium, even when entity‑specific data were clean.  
-- The auction‑house case that was mis‑classified shows over‑weighting of “sector vulnerability” and under‑weighting of (a) moderate volumes, (b) single explained flag, (c) lack of any adverse intel.  
-- Sector risk should adjust the baseline slightly (e.g., 0→low or very low‑medium), not drive a materially higher rating when everything else looks benign.
+- Customer is a student, pensioner, casual worker, or low‑complexity retail customer AND  
+- Fan‑in >3–5 or fan‑out >10–15.  
+Rationale: Many mule cases relied on the fact that for a pensioner or student, “16 senders” or “40–60 recipients” is already abnormal, even though the system threshold is 20/80. In errors, the agent compared only to generic thresholds and ignored how extreme those figures are for that profile. Always run a “profile‑scale” test: is this many counterparties plausible for this life stage and income source?
 
 ---
 
-[Rule 3]: When volumes and averages are clearly sub‑threshold and only one graph metric is abnormal, consider whether you are seeing only a partial view of a legitimate high‑turnover business before inferring laundering.  
+[Rule 3]: Treat law‑enforcement or regulator‑named typologies as *active red flags* when the account pattern fits  
 Applies when:  
-- Total volume is below the elevated‑throughput benchmark (~$200k in this setup),  
-- Average amount is below $1,000,  
-- Fan-in is low or normal, and  
-- Only fan-out or fan-in is modestly above threshold (80/20), with no other anomalies.  
-Rationale:  
-- In many high‑roller traps (fintech IPO, lithium miner, luxury imports, casino, hospital, mining, law firms), the system saw “big business, small slice” – the on‑us account carried only a small operational subset relative to public revenues.  
-- The incorrect auction‑house case had exactly this pattern (moderate volume, low average, single high fan-out), yet the agent treated it as meaningfully elevated risk rather than as one operating account in a larger, legitimate business.  
-- Recognising “partial window into a larger legitimate operation” avoids inflating risk ratings where nothing suggests the slice itself is being abused.
+- News from AUSTRAC/AFP/police/regulators describes a concrete typology (e.g. working‑holiday mules, gig‑account fronts, hospitality mules) AND  
+- Client demographics and transaction pattern match that typology (multi‑small payers, moderate fan‑in, unexplained fan‑out, sub‑threshold volumes).  
+Rationale: In the false negatives, the agent acknowledged AUSTRAC/AFP typology reports but only used them to justify “medium risk”. Ground truth expected high risk: those typologies are the *signal*, not background colour, when the pattern matches. When an official typology describes exactly what you see, escalate weight sharply.
 
 ---
 
-[Rule 4]: For charities and NGOs, treat high fan-in (and moderate fan-out) as business‑normal when supported by registration and regulator oversight, and default to low risk unless there is entity‑specific negative intel.  
+[Rule 4]: When law‑enforcement or supervisory intelligence names the *specific customer*, override “clean” transaction data  
 Applies when:  
-- HIGH FAN-IN (>20) is present, with modest volumes and average amounts,  
-- The knowledge base indicates the entity is a registered charity/NGO (ACNC or equivalent) with current registration and/or audited accounts,  
-- There is no specific allegation of misuse of funds, extremism, or terrorism links.  
-Rationale:  
-- Across many charity traps, the agent correctly matched “many donors, many beneficiaries” to donation‑funded NGOs and still often left scores in medium.  
-- The training signal: these are canonical false positives; registration plus positive/neutral regulator commentary is strong evidence to downgrade to low.  
-- Only sector‑level comments (“charities can be abused”) appeared, and those did not correlate with actual ML in any trap; they should not be enough to hold the rating in medium absent specific concerns (e.g., related‑party abuse escalating, terror designations, sanctions).
+- Article/brief from AFP, Interpol, AUSTRAC, DFAT, law society, etc. explicitly links the subject to a crime (mule network, fraud, TF, sanctions evasion, hawala, ransomware, trafficking), OR describes them as a suspect/charged/convicted, AND  
+- The account data are low/normal volume and no automated flags.  
+Rationale: In “sleeper” traps, the correct high‑risk decision came from giving decisive weight to adverse intelligence, even though on‑us metrics looked ordinary. Errors in other contexts often came from leaning back on “no flags” or modest throughput. Where reputable authorities explicitly allege involvement, the quantitative profile is expected to look normal; it should not dilute the risk band.
 
 ---
 
-[Rule 5]: For payroll / labour‑intensive entities, interpret very high fan‑out as benign when aligned with documented headcount and payroll/contractor models.  
+[Rule 5]: A court judgment or regulator enforcement action is a near‑conclusive indicator of high risk  
 Applies when:  
-- HIGH FAN-OUT (>80) is observed,  
-- Fan-in is low/moderate, volume and average amount are mid‑range, and  
-- Qualitative evidence clearly describes a business with many employees/contractors (security firms, cleaning companies, construction, staffing agencies, retailers, SaaS/startups, gig/freelance platforms, property managers, distributors).  
-Rationale:  
-- In payroll traps, agent performance was consistently correct: they looked for explicit evidence of large workforces, contracts, or platform payouts and then de‑emphasised the fan‑out flag.  
-- These same patterns should lead to an “often low” classification, not consistently medium, once the payroll explanation is well supported and there is no other ML signal.  
-- High fan‑out, in isolation, is a weak ML indicator in these contexts and should not dominate over a strong payroll narrative.
+- There is a conviction, guilty plea, or formal civil/administrative finding for ML‑relevant conduct (proceeds of crime, mule activity, foreign bribery, proliferation financing, sanctions breaches, fraud facilitation) tied to the customer.  
+Rationale: In correct trap cases, court decisions and board investigations drove high scores even when numbers were modest. In false negatives, similar‑strength intelligence would have required high risk but was under‑weighted. Treat such outcomes as sufficient for a high risk band unless there is compelling reason to think the account is unrelated or historic and fully de‑risked.
 
 ---
 
-[Rule 6]: For “structurer”‑type flags (high average transaction value), rely heavily on sector‑consistent pricing and billing norms before inferring laundering.  
+[Rule 6]: Sectoral “vulnerability” alone should not lift a clearly legitimate, well‑governed business above low risk  
 Applies when:  
-- HIGH AVG TRANSACTION (> $1,000) is the main or only flag,  
-- Volume is modest (<$200k) and fan‑in/fan‑out are unremarkable, and  
-- Articles describe sectors where per‑transaction values are naturally high: medical specialists, cosmetic clinics, used‑car dealers, import–export traders, luxury hotels, tattoo studios, electricians, vending operators, parking, small contractors.  
-Rationale:  
-- Correct cases repeatedly show that high avg size is fully explained by ordinary pricing (e.g., $900–1,100 Medicare rebates, $1k+ car/tattoo/electrical invoices, trade shipments, luxury rooms).  
-- The agent still tended to keep risk in medium in many of these – the training labels say these are false positives.  
-- Going forward, when sector pricing directly matches the numeric pattern and no other strong risk factors exist, high‑avg flags should usually be discounted and risk pushed towards low.
+- Customer is in an inherently higher‑risk sector (casinos, real estate, art, law firms, hospitality, precious metals, vehicle dealers, cosmetics, luxury hotels, seafood, etc.) BUT  
+- News and data show: licensing/registration, clean audits, regulator/ACNC/ASIC sign‑off, long‑standing operations, and the transaction metrics match the business model with no additional red flags.  
+Rationale: Many false positives arose where the agent upgraded to medium based mainly on sectoral risk (casino scrutiny, transport sham‑contracting, art market AML concerns) despite strong alibis and no adverse findings. Correct trap cases show that when the qualitative evidence clearly explains the quantitative flags and governance is strong, sector‑wide vulnerability should only justify “upper end of low”, not automatic medium.
 
 ---
 
-[Rule 7]: When credible law‑enforcement or FIU/intelligence sources allege specific financial‑crime typologies, override “clean” transaction data.  
+[Rule 7]: Use qualitative “business model alibis” to actively *explain away* structural flags (high fan‑in/fan‑out or high average) for organisations  
 Applies when:  
-- Qualitative sources include AFP, AUSTRAC, DFAT, FIUs, or similar,  
-- They allege concrete roles (financial controller, facilitator, hawala operator, proliferation financier, sanctions evader, human‑trafficking facilitator, ransomware laundering node, tax‑evasion facilitator), and  
-- The account’s metrics are modest and may be intentionally engineered to avoid detection.  
-Rationale:  
-- In all sleeper/false‑negative traps, the only real signal was high‑quality adverse intel; metrics were deliberately mundane. The agent correctly rated these high risk by giving decisive weight to the intel.  
-- In this class of scenarios, benign‑looking volume, fan‑in/fan‑out, and averages are not mitigating – they are part of the typology (small, routine flows).  
-- Systematic rule: law‑enforcement/FIU‑grade adverse intel trumps a lack of quantitative flags unless the intel is clearly weak, outdated, or rebutted.
+- Account shows a structural flag (HIGH FAN‑IN, HIGH FAN‑OUT, HIGH AVG) AND  
+- News provides a coherent operational reason:  
+  - Charities with many donors (fan‑in)  
+  - NGOs/foundations with many beneficiaries (fan‑out)  
+  - Payroll / staffing / labour hire / builders / security / cleaning / agencies with many employees/contractors (fan‑out)  
+  - Trust/property funds and co‑ops distributing to unit‑holders or farmers (fan‑out)  
+  - Clinics, vets, hotels, jewelers, tattoo studios, cosmetic clinics with four‑figure service prices (high average).  
+Rationale: Correct trap cases repeatedly showed that once a structural red flag is explained by a validated operating model and supported by regulators/audits, residual AML risk is modest. In the casino and PE fund false positives, the agent recognised the alibi but didn’t go far enough in downgrading to low.
 
 ---
 
-[Rule 8]: Treat favourable “human interest” or reputational articles as very weak evidence against specific adverse intel.  
+[Rule 8]: High fan‑in is *benign* when clearly linked to a registered, well‑regulated charity or foundation  
 Applies when:  
-- One article portrays the subject as community‑minded, diligent, successful, charitable, etc.,  
-- Another article or official source alleges direct involvement in serious crime (drug networks, trafficking, bribery, sanctions evasion, ransomware, hawala), and  
-- Transaction data are compatible with either story.  
-Rationale:  
-- In multiple sleeper cases (refugee small business + people‑smuggling facilitation; mechanic + drug controller; volunteer mentor + trafficking facilitator; pro‑bono lawyer + bribery conduit; retiree + sanctions/proliferation activity), positive character coverage co‑existed with heavy adverse intel.  
-- The correct decisions always weighted law‑enforcement and detailed investigative reporting far more than positive local press; this is realistic: offenders often have good surface reputations.  
-- Future logic should never “average out” good‑news and bad‑news articles; bad‑news from credible authorities should be decisive.
+- Fan‑in >20 AND  
+- Qualitative data shows: ACNC‑registered charity or foundation, current registration, up‑to‑date reporting, audited accounts, government/local grant funding, and mainstream‑media context (recognized appeals, disaster relief, welfare, refugee/health/youth/mental health/animal charities).  
+Rationale: In many charity traps, fan‑in triggered the system flag but the correct decision was low risk because multiple donors are intrinsic to donations‑based models. Errors stem from treating fan‑in mechanically without giving enough credit to regulator‑verified status and clean compliance histories.
 
 ---
 
-[Rule 9]: When adverse media describes a typology that explicitly explains the otherwise “normal” metrics, interpret the absence of system flags as confirmatory of the typology, not as mitigation.  
+[Rule 9]: High fan‑out is *benign* when strongly consistent with documented payroll, staffing, or property‑management roles  
 Applies when:  
-- Articles from credible sources state that the subject kept transactions “small,” “routine,” “unremarkable,” or “below thresholds” to evade detection,  
-- Quantitative metrics indeed show modest volumes, sub‑threshold averages, and no automated flags, and  
-- The typology involves covert use of personal or business accounts (bribery, sanctions evasion, trafficking, ransomware, hawala, informal value transfer).  
-Rationale:  
-- In many sleeper cases, investigators explicitly said the account looked like normal income or small flows, and that this was intentional. The agent correctly matched those descriptions to the quiet numeric profile and raised risk to high.  
-- The mis‑taken instinct in many AML systems is “no flags → lower risk”; the rule must invert that when the intelligence *predicted* that no flags would fire.  
-- Seeing the exact pattern investigators highlight (small, routine flows) should increase confidence in the adverse story, not comfort.
+- Fan‑out >80 AND  
+- News shows the entity pays large numbers of employees/contractors/landlords/nurses/guards/drivers/cleaners/tenants via formal payroll systems or trust/property management structures (enterprise agreements, labour‑hire licences, RCSA membership, ATO/BAS records, trust account audits, government contracts).  
+Rationale: Correct payroll/property traps show that wide distribution patterns are expected for legitimate employers and property managers. In false positives, the agent kept scores at medium despite compelling payroll explanations. Once payroll/trust functionality is well documented and there’s no other suspicion, fan‑out should be treated as explained residual risk.
 
 ---
 
-[Rule 10]: For sector‑wide compliance or governance concerns unrelated to ML/TF, keep them as a weak, secondary factor.  
+[Rule 10]: For high‑turnover regulated businesses, modest on‑us volumes + many recipients usually point to a *sub‑account*, not laundering  
 Applies when:  
-- Articles discuss audits, Fair Work reviews, wage underpayment probes, tax/GST compliance sweeps, governance reviews of charities, environmental/regulatory crackdowns, without naming specific misconduct by the client; and  
-- No AML‑relevant issues (fraud, corruption, sanctions, TF, organised crime) are alleged.  
-Rationale:  
-- In many correct cases, these sectoral stories (Fair Work, ATO, ACNC, labour, environmental, GST crackdowns) existed but did not correlate with any ML behaviour in the labelled data.  
-- The agent often let these concerns push everything to medium; the training labels signal that this is too conservative.  
-- Such stories should only slightly nudge risk upward when everything else is clean and well‑explained, not be used to justify medium‑plus scores on their own.
+- News indicates very large scale (e.g. $35m hospital claims, $180m casino revenues, $280m fund, $22m harvest payouts) AND  
+- Observed account volume is ~100–200k with moderate average ticket, and fan‑out ~80–100.  
+Rationale: In multiple “high‑roller” traps, the dataset only showed a small slice of much bigger, regulated operations. The correct pattern was: this is a side or operating account of a legitimate high‑turnover entity, explaining fan‑out without implying laundering. Errors came from over‑reading the fan‑out flag and under‑reading the scale mismatch.
 
 ---
 
-[Rule 11]: Use “multiple independent anomalies” as the bar for medium/high when there is no adverse intel; a single explained anomaly should normally map to low.  
+[Rule 11]: Do not take comfort from “no automated flags” when typology explicitly says criminals stay under thresholds  
 Applies when:  
-- Only one of the key quantitative risk flags is triggered, and that flag has a strong, documented business‑model explanation,  
-- KYC/news show a regulated, established entity with oversight (licences, ACNC registration, ASIC filings, audits), and  
-- There is no law‑enforcement or sanctions adverse media.  
-Rationale:  
-- Reviewing the training set, truly suspicious cases generally involved either adverse intel or a constellation of issues; benign trap cases almost always had exactly one mechanical flag that was fully explained (charity fan‑in, payroll fan‑out, structurer avg).  
-- The incorrect auction‑house decision illustrates over‑penalising a single explained high fan‑out plus generic sector risk.  
-- A more calibrated rule: reserve medium/high for (a) adverse intel, or (b) combinations of unexplained metrics (e.g., high fan‑in + high fan‑out + near‑threshold volume) or inconsistent narratives.
+- Qualitative intelligence explicitly notes: “transfers kept small to avoid alerts”, “volumes calibrated below thresholds”, or “no bank alerts triggered” as part of the modus operandi, AND  
+- Observed activity is indeed sub‑threshold but non‑trivial.  
+Rationale: In sleeper and mule traps, the agent often noted lack of flags as slightly mitigating. But law‑enforcement material stressed that this is by design. In such cases, “no flags” is *supporting evidence of the typology*, not exculpatory.
 
 ---
 
-[Rule 12]: Always test for “business-structure coherence” before inferring ML from graph structure.  
+[Rule 12]: For students, working‑holiday and gig accounts in flagged typologies, default to higher risk when patterns are ambiguous  
 Applies when:  
-- You see high fan‑out or fan‑in, but also have rich qualitative detail about the entity’s operations (headcount, number of donors/clients, number of outlets, scale of contracts), and  
-- The observed numbers (count of senders/recipients, ticket sizes, total volumes) are consistent with that operational description.  
-Rationale:  
-- In most correct cases, the agent implicitly performed this coherence test (e.g., “95 recipients ≈ 90–200 staff”, “22 senders vs 3,000 donors = actually small slice”, “avg $1,040 matches ticket pricing”).  
-- Codifying that test formalises the idea: if the numbers line up with the stated scale and structure, the graph pattern is likely business‑normal rather than ML.  
-- In the auction case, the agent focused on the mismatch in ticket size vs headline article, but failed to then re‑ground on the coherence of the pattern with a smaller or ancillary art/auction account, and thus over‑penalised.
+- Demographic: student / international student / working holiday / gig‑economy worker, AND  
+- Sector/regulator warnings exist specifically about mule use of such accounts, AND  
+- Transactions show:  
+  - multi‑sender fan‑in (10–20),  
+  - moderate‑to‑high fan‑out (20–60+),  
+  - total volume and avg amounts plausible but elevated vs. expected income.  
+Rationale: False negatives show the agent treated these as “plausibly gig/student” plus typology risk = medium. Ground truth expected high: the risk design of these traps is that “normal-looking” student/gig activity is the camouflage. When both demographics and numbers fit a published typology and there’s no strong, individualised alibi, lean toward high.
 
 ---
 
-[Rule 13]: When qualitative sources indicate strong control frameworks, treat them as genuine mitigants if no adverse facts are present.  
+[Rule 13]: When the only qualitative signal is *environmental warning* (no client‑specific intel), treat it as a modest uplift, not decisive  
 Applies when:  
-- Articles explicitly mention external audits (Big Four, law society, trust‑account audits), government contracts with compliance checks, regulator‑mandated audits, long‑standing clean regulatory records, or verified digital audit trails,  
-- There is no direct allegation of ML/TF misuse or control failures for the client, and  
-- Quantitative anomalies are modest and structurally explainable.  
-Rationale:  
-- Many correct trap cases highlighted strict trust‑account rules, daily reconciliations, ASIC/ACNC oversight, government contract vetting, automated ticketing systems, or invoicing that matched bank records.  
-- These are not decorative details; they materially reduce the probability that observed anomalies are due to deliberate laundering, especially where sector‑level risk exists.  
-- In the auction‑house misclassification, the presence of trust accounts and ASIC‑compliant terms were acknowledged but not given enough downward weight; such governance cues should push risk down when unaccompanied by any contrary evidence.
+- News is generic warnings to broad groups (e.g., “international students on WeChat are targeted”, “hospitality workers at risk”, visa holders in general), AND  
+- No direct allegation, no typology case study closely matching this account, and no naming of the client.  
+Rationale: In some false negatives the agent under‑weighted environmental warnings; in some false positives, sector warnings were over‑weighted. The pattern from correct cases: environmental or demographic risk should raise a low score to low‑medium or medium‑low, but not to high unless combined with a close typology match or other red flags.
 
 ---
 
-[Rule 14]: Distinguish between “entity‑specific issue under review” and generic “sector risk” when governance concerns arise, and escalate only in the former.  
+[Rule 14]: Positive character or “community hero” articles cannot substantially offset hard adverse intelligence  
 Applies when:  
-- Media mention a specific board conflict, related‑party payment, wage issue, or governance question for the client, and  
-- Regulators are “looking into” or “monitoring” but no enforcement action or serious financial crime allegation exists.  
-Rationale:  
-- Some charity cases involved related‑party subcontracting or governance reviews with ACNC “routine monitoring.” The agent appropriately raised risk slightly but not to high, recognising this is not yet an ML allegation.  
-- This pattern contrasts with sleeper/intel cases where regulators explicitly alleged financial facilitation of crime – those warranted high scores.  
-- Future reasoning should calibrate: early‑stage governance noise (without misappropriation, fraud, or crime language) warrants at most a minor upward adjustment from low and not a move into high.
+- One article is laudatory (volunteer firefighter, mechanic mentoring youth, small‑business community figure), AND  
+- Another credible source (AFP, Interpol, DFAT, AUSTRAC) alleges serious predicate crime (terrorism, drug network, trafficking, large fraud, sanctions/proliferation) involving the same person.  
+Rationale: Correct sleeper‑case handling showed that community reputation is orthogonal to ML risk; in several cases criminals deliberately used a “trusted” image. The agent must not soften a high‑risk classification primarily because of positive character reporting.
 
 ---
 
-[Rule 15]: For personal or small‑business accounts with many counterparties but no business explanation, treat elevated fan-out/fan-in more seriously than for well‑documented corporates.  
+[Rule 15]: For typology‑based risk (mules, gig fronts, scam mule pensioners), judge “fit” on *shape*, not on exact numerical thresholds  
 Applies when:  
-- The account is clearly personal or very small‑scale, no payroll/charity/large‑business explanation is present, and  
-- Fan‑out/fan‑in are significantly above what’s normal for personal use (e.g., 20+ counterparties), and  
-- Adverse media suggests possible facilitation roles (trafficking, bribery, sanctions, hawala, ransomware, tax evasion).  
-Rationale:  
-- In all sleeper cases involving individuals, modest but broad patterns of counterparties were treated as supportive of the facilitation hypothesis (e.g., 24–33 recipients for persons under investigation), even though they didn’t cross corporate thresholds.  
-- By contrast, the same raw numbers were benign in charity or payroll contexts because of the business‑model alibi.  
-- The rule: thresholds are relative – for a retiree or sole individual, 25–30 counterparties is a stronger anomaly and should be weighed more heavily if supported by adverse intel.
+- LE/regulator case study describes e.g. “>60 deposits in a month”, “>30 senders in 2 months”, but your observation window shows fewer senders/less volume with the same structural pattern, AND  
+- There is clear reason to think the dataset is partial (shorter period, single bank, etc.).  
+Rationale: In false negatives the agent discounted typology fit because fan‑in was below the case‑study count. Correct high‑risk calls accepted that thresholds in examples are indicative, not minimums. Focus on pattern elements: third‑party deposits, rapid pass‑through, multiple payers unrelated to the profile, not exact integers.
 
 ---
 
-These rules collectively push the agent to:
+[Rule 16]: For high‑ticket SME/professional services, treat high average value as expected when unit economics match  
+Applies when:  
+- High Avg Amount flag fires (>1k) AND  
+- Sector news shows typical per‑service fees in that range or higher (specialist doctors, veterinary surgeons, cosmetic clinics, hotels, carpenters/electricians, tattoo studios, jewellers, car dealers, vending cash‑up, etc.), AND  
+- Total volume moderate, fan‑in/fan‑out not extreme, and audits/licences exist.  
+Rationale: Correct structurer traps show that regular four‑figure payments are normal in many legitimate service businesses; the agent’s job is to confirm that fee levels match. Several FPs occurred where the agent acknowledged this but still maintained medium risk instead of downgrading to low.
 
-- Heavily prioritise high‑quality adverse intelligence over “clean” metrics when present.  
-- Aggressively down‑weight single, well‑explained structural flags in regulated or transparently legitimate business models.  
-- Avoid over‑using generic sector risk or governance noise to justify medium/high ratings in otherwise clean, explained cases (as happened in the auction‑house false positive).
+---
+
+[Rule 17]: Differentiate *sector‑level conduct risk* (e.g., wage theft, over‑billing) from ML/TF risk unless there’s a clear proceeds‑of‑crime channel  
+Applies when:  
+- Articles discuss Fair Work/ACCC/health billing investigations, wage underpayment, sham contracting, fee inflation etc., BUT  
+- No indication that misbehaviour is prosecuted, tied to serious predicate crime, or flowing through the account in ways indicative of laundering.  
+Rationale: In correct payroll and medical traps, these concerns justified a small uplift but not a change of band. Many false positives came from treating any conduct/regulatory issue as AML‑equivalent. Only escalate strongly when there is a clear path from the conduct to material illicit proceeds moving through the account.
+
+---
+
+[Rule 18]: For “sleeper” risk (TF, sanctions, proliferation, hawala, bribery), modest dispersion + typical personal volumes can still mean high risk  
+Applies when:  
+- Personal/sole‑proprietor accounts with:  
+  - Total volume ~40–80k,  
+  - Avg Amount ~600–1,100,  
+  - Fan‑in ~10–15, fan‑out ~20–35,  
+  - No system flags, AND  
+  - Strong qualitative intel of TF/proliferation/hawala/bribery involvement.  
+Rationale: All sleeper cases show low‑ish, normal‑looking patterns; that is their design. The agent correctly labelled them high when it let the qualitative evidence dominate. To avoid future errors, codify: for such offences, transaction “inconspicuousness” is part of the typology, not a mitigating factor.
+
+---
+
+[Rule 19]: For student/gig/pensioner mule risk, unexplained *fan‑out* is at least as important as high fan‑in  
+Applies when:  
+- Profile: aged pensioner, student, gig worker, working holiday, AND  
+- Fan‑out to many personal recipients (20–60+) not obviously merchants/billers, with non‑trivial volume.  
+Rationale: The traps’ ground truth stresses “high fan‑in with small amounts”, but several correct and incorrect cases actually showed risk more on the outbound side (students and pensioners redistributing funds). The agent often focused on sub‑20 fan‑in and down‑weighted risk. For low‑income individuals, a broad distribution tree itself is a strong mule signal.
+
+---
+
+[Rule 20]: Disaggregate “environmental typology warning” vs “case study clearly about this person” and weight accordingly  
+Applies when:  
+- One article is generic guidance (e.g., “gig workers targeted”, “students at risk”),  
+- Another is a case study with concrete amounts, timeframes, and behaviours, AND evidence suggests it is *the same individual* (same university, age, role, location, name).  
+Rationale: In successful high‑risk cases (pensioner mule, convicted student mule, graduate accountant, crypto‑ransomware facilitator), the agent effectively treated the case study as about the client and escalated strongly. In false negatives with only generic pieces, the agent should not assume identity, but when identity alignment is strong, treat it like direct adverse media.
+
+---
+
+[Rule 21]: When news clearly identifies the account as already frozen or subject to LE action, treat history as proven misuse  
+Applies when:  
+- Article states the bank has frozen the account due to suspicious activity, or LE has already seized or restrained the account.  
+Rationale: In mule traps, AFP or banks had already frozen accounts after confirming misuse; future activity (if re‑opened) is high risk by history. The agent should view such accounts as “known compromised” and score high risk, not medium.
+
+---
+
+[Rule 22]: When there is *only* generic KYC context supporting legitimacy, do not let it neutralise concrete anomalies  
+Applies when:  
+- Positive news is high‑level (“backpacker funding travel”, “student budgeting app”, “gig workers usually have multiple payers”), AND  
+- Actual metrics show patterns more extreme than the narrative naturally implies (e.g. student with 60+ recipients, backpacker with 76 recipients).  
+Rationale: In false negatives, the agent over‑relied on generic “this could be legitimate” narratives and downplayed that the little details (scale, dispersion, volumes) were beyond what those articles actually described. Generic lifestyle context mitigates slightly; it cannot fully explain obviously anomalous behaviour.
+
+---
+
+[Rule 23]: Treat “account used by third parties” as a strong risk regardless of customer culpability  
+Applies when:  
+- Intelligence says credentials were shared/sold, acquaintance controlled access, or account was lent out for a fee, AND  
+- Funds from scams/fraud/drugs passed through.  
+Rationale: In the pensioner mule trap, the customer was unwitting, but the correct assessment was high risk because the account is a demonstrated conduit for criminal proceeds and may remain exposed. The agent should separate “customer’s moral blame” from “account’s AML risk”.
+
+---
+
+[Rule 24]: When a client’s account metrics fall just below *multiple* hard thresholds simultaneously, treat that as suspicious calibration  
+Applies when:  
+- Total volume is just under 200k, avg amount just under 1k, fan‑out high but just under 80, fan‑in in mid‑teens, AND  
+- Segment has known typology of operating below bank thresholds (mules, gig fronts, TF, sanctions, proliferation).  
+Rationale: Several mule/structuring cases sat just shy of every automated threshold. This clustering itself is suspicious in contexts where bad actors design flows to avoid alerts. The agent should see “just under everywhere” as a composite risk signal when combined with a matching typology.
+
+---
+
+[Rule 25]: For each case, explicitly answer: “Is there a *specific*, well‑supported benign explanation for the main anomaly?”  
+Applies when:  
+- Any structural anomaly (fan‑in, fan‑out, avg, volume) is present.  
+Rationale: In high‑quality correct cases, the agent always matched anomalies to specific news: donations, payroll to X guards, co‑op distributions, specialist fees. In many false negatives, no such specific explanation existed for e.g. broad student fan‑out, yet the agent still downgraded. If you cannot clearly articulate such an explanation tied to concrete qualitative evidence, treat the anomaly as *unexplained* and risk‑elevating.
+
+---
+
+[Rule 26]: For retail / personal accounts, benchmark total volume against realistic income for the profile  
+Applies when:  
+- Individual customers (students, pensioners, baristas, casual workers, recent graduates) with total volumes ~80–200k and mid‑three‑figure average amounts.  
+Rationale: Several mule cases involved students and pensioners whose legitimate income would be far lower than observed throughput. The agent mentioned “material for a student” but did not fully operationalise that as a strong red flag. Volumes that are small in institutional AML terms can be extreme relative to stated occupation and should weigh heavily.
+
+---
+
+[Rule 27]: When an account’s *role* in a criminal network is described as “critical node” or “financial controller”, assign high risk even with low volumes  
+Applies when:  
+- LE/media uses language such as “critical node”, “financial controller”, “conduit”, “laundering node” for fraud, drugs, ransomware, TF, trafficking, AND  
+- Account metrics are modest.  
+Rationale: Correct handling of ransomware, drug, and trafficking facilitators shows that it is the structural role that matters, not raw turnover. These descriptors imply centrality in flow networks; the agent should reflect that with high risk scores.
+
+---
+
+[Rule 28]: Separate “inherent sector risk” from “observed behaviour risk” and combine them multiplicatively, not additively  
+Applies when:  
+- Sector is inherently higher risk, but observed behaviour is low‑risk and well‑explained, OR  
+- Sector is low risk, but observed behaviour is anomalous and qualitatively suspicious.  
+Rationale: In several FPs the agent effectively did “low behaviour + high sector = medium”, while in several FNs it did “medium behaviour + medium typology = medium”. The better pattern from correct traps is: treat either dimension as capable of driving the assessment, and let clear benign behaviour pull scores *down* even in high‑risk sectors, and let clear adverse behaviour push scores *up* even in low‑risk ones.
+
+---
+
+[Rule 29]: When multiple benign explanations compete with a strong criminal typology, require *case‑specific* evidence to stay below high  
+Applies when:  
+- You have both a plausible innocent explanation (student share‑house, gig worker, traveller) *and* a highly specific typology/LE intel (student mule rings, gig‑account fronts) that matches pattern shape.  
+Rationale: In some smurf traps the agent stayed at medium because “both are plausible”. Ground truth expected high, reflecting that in AML we err on the side of caution when typology + pattern + demographics align and there is no concrete, individualised evidence proving the activity is truly benign (e.g., invoices, employment, platform statements). Without that evidence, lean higher.
