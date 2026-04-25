@@ -128,6 +128,8 @@ Two LLM judges score each case on a 1–10 scale:
 - **Evidence Coverage:** Does the reasoning cite specific metrics and article claims?
 - **Conclusion Consistency:** Does the reasoning support the final risk decision?
 
+### 4a. Original scores (judge: gpt-5.1, self-evaluation)
+
 | Metric | Intrinsic | Hierarchical | Context-Eng | LLM-Context |
 |---|:---:|:---:|:---:|:---:|
 | Evidence Coverage (mean) | 9.60 | **9.74** | 9.69 | 9.86 |
@@ -140,6 +142,36 @@ available evidence regardless of governance structure. The meaningful distinctio
 consistency: Context-Engineered (8.80) and LLM-Context (8.72) score substantially higher than Intrinsic
 (7.34) and Hierarchical (7.37). Rule injection improves the alignment between stated reasoning and final
 decision — even when the rules were derived from a different model's failure traces.
+
+### 4b. Re-scored with external judge (judge: claude-sonnet-4-6)
+
+To reduce self-evaluation leniency bias, reasoning quality metrics were re-run using Claude Sonnet 4.6
+as a fixed external judge. This also extends coverage to the two combined modes (hier_context_engineered,
+hier_llm_context) not scored in the original run.
+
+| Metric | Intrinsic | Hierarchical | Context-Eng | LLM-Context | Hier+Ctx | Hier+LLM |
+|---|:---:|:---:|:---:|:---:|:---:|:---:|
+| Evidence Coverage (mean) | 9.19 | 9.07 | **9.57** | 9.36 | 9.17 | 9.05 |
+| Conclusion Consistency (mean) | 6.96 | 6.28 | **9.39** | 9.15 | 8.60 | 6.64 |
+
+**Key observations:**
+
+Evidence coverage drops modestly from self-judged scores (~9.6–9.9 → ~9.1–9.6), confirming that gpt-5.1's
+reasoning genuinely engages with the evidence — the external judge finds real citation of metrics and
+article content, not just surface-level mentions. The drop is much smaller than for gpt-4o-mini (where
+evidence coverage fell from ~9.4 to ~6.5), consistent with the broader capability gap between models.
+
+Conclusion consistency shows a sharp and clear split under the external judge. The three modes with rule
+injection applied to the self-review step score dramatically higher (Context-Eng: 9.39, LLM-Context: 9.15,
+Hier+Ctx: 8.60) than the modes without rule injection (Intrinsic: 6.96, Hierarchical: 6.28, Hier+LLM:
+6.64). This result strengthens the original finding: explicit rules do not merely add text to the review —
+they produce reasoning that is measurably more internally coherent when evaluated by an independent judge.
+
+The exception is Hier+LLM (6.64), which scores similarly to the no-rule modes despite combining a
+hierarchical auditor with LLM-synthesised rules. This may reflect that at gpt-5.1 capability levels, the
+LLM-synthesised rules add less signal when paired with an already-capable independent auditor, or that the
+auditor's rewriting process disrupts the alignment between evidence and conclusion that the rules otherwise
+enforce.
 
 ---
 

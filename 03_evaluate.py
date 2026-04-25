@@ -476,7 +476,7 @@ def evaluate_reasoning(
 
     from mlflow.metrics.genai import make_genai_metric
 
-    judge_model = f"openai:/{os.getenv('LLM_MODEL', 'gpt-4o-mini')}"
+    judge_model = os.getenv('JUDGE_MODEL', f"openai:/{os.getenv('LLM_MODEL', 'gpt-4o-mini')}")
 
     evidence_coverage = make_genai_metric(
         name="evidence_coverage",

@@ -137,7 +137,51 @@ Context-Eng REJECTs trigger small downward corrections (+3.4); all other modes t
 
 ## 4. Reasoning Quality
 
-Reasoning quality metrics (LLM judge scores for evidence coverage and conclusion consistency) were not computed for the grok-4 experiment. For reference, across gpt-4o-mini and gpt-5.1, evidence coverage was uniformly high (9.3–9.9/10) while conclusion consistency varied with governance mode (6.8–8.8/10), with rule-injected modes scoring highest on consistency.
+Two LLM judges score each case on a 1–10 scale:
+- **Evidence Coverage:** Does the reasoning cite specific metrics and article claims?
+- **Conclusion Consistency:** Does the reasoning support the final risk decision?
+
+### 4a. Original scores (judge: grok-4, self-evaluation)
+
+Reasoning quality metrics were not computed for the grok-4 self-evaluation run. For reference, across
+gpt-4o-mini and gpt-5.1 self-evaluation, evidence coverage was uniformly high (9.3–9.9/10) while
+conclusion consistency varied with governance mode (6.8–9.9/10), with rule-injected modes scoring
+highest on consistency.
+
+### 4b. Re-scored with external judge (judge: claude-sonnet-4-6)
+
+Reasoning quality metrics were computed using Claude Sonnet 4.6 as a fixed external judge. This
+establishes a consistent cross-model comparison baseline and covers all six governance modes including
+the combined modes (hier_context_engineered, hier_llm_context).
+
+| Metric | Intrinsic | Hierarchical | Context-Eng | LLM-Context | Hier+Ctx | Hier+LLM |
+|---|:---:|:---:|:---:|:---:|:---:|:---:|
+| Evidence Coverage (mean) | **8.98** | **8.98** | 8.96 | 8.89 | 8.93 | 8.89 |
+| Conclusion Consistency (mean) | 7.47 | 7.80 | 7.59 | 7.47 | **7.90** | 7.27 |
+
+**Key observations:**
+
+Evidence coverage is uniformly high across all six modes (8.89–8.98) and does not vary meaningfully
+with governance mode. This mirrors the gpt-5.1 pattern (9.05–9.57 under the same judge) and stands in
+sharp contrast to gpt-4o-mini (6.43–6.60 under sonnet 4.6). grok-4 reliably cites specific metrics and
+article content regardless of governance structure — evidence retrieval is not the limiting factor.
+
+Conclusion consistency is moderate and shows a flatter spread across modes (7.27–7.90) compared to
+gpt-5.1's dramatic split (6.28–9.39). The absence of the strong rule-injection lift seen at gpt-5.1
+(where Context-Eng jumped from 6.96 to 9.39) reflects grok-4's already-strong intrinsic reasoning
+baseline: when the base model is well-calibrated, explicit rules add less structural scaffolding to
+the reasoning process.
+
+The highest consistency is Hier+Ctx (7.90), followed by Hierarchical (7.80). This is the inverse of
+the classification performance ordering (Context-Eng is best at F1=0.932; Hierarchical is worst at
+F1=0.889). The dissociation confirms that conclusion consistency measures internal reasoning coherence,
+not classification correctness: the hierarchical auditor produces locally coherent reasoning chains by
+rewriting justifications after its escalation decisions, even when those decisions are wrong.
+
+LLM-Context and Intrinsic are tied at 7.47 — the lowest among the four core modes. LLM-Context's poor
+classification (F1=0.816, 27 FPs) is not visible in its reasoning quality score, confirming that the
+failure is a calibration failure in the rule synthesis (over-escalation from sparse error signal), not
+a failure of the reasoning process itself. The reasoning is coherent; the conclusions are wrong.
 
 ---
 

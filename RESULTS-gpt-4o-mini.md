@@ -128,6 +128,8 @@ Two LLM judges score each case on a 1–10 scale:
 - **Evidence Coverage:** Does the reasoning cite specific metrics and article claims?
 - **Conclusion Consistency:** Does the reasoning support the final risk decision?
 
+### 4a. Original scores (judge: gpt-4o-mini, self-evaluation)
+
 | Metric | Intrinsic | Hierarchical | Context-Eng | LLM-Context |
 |---|:---:|:---:|:---:|:---:|
 | Evidence Coverage (mean) | 9.32 | **9.54** | 9.36 | 9.42 |
@@ -145,6 +147,36 @@ which reflects an artefact of the audit structure: the auditor rewrites reasonin
 decision, producing locally coherent argument chains even when the underlying decision is wrong. Intrinsic
 scores lowest (6.76), consistent with the model's tendency to issue high-confidence incorrect decisions on
 the FP traps without flagging internal tension in its reasoning.
+
+### 4b. Re-scored with external judge (judge: claude-sonnet-4-6)
+
+To reduce self-evaluation leniency bias — a model rating its own reasoning will tend to be systematically
+lenient — the reasoning quality metrics were re-run using Claude Sonnet 4.6 as a fixed external judge.
+This also extends coverage to the two combined modes (hier_context_engineered, hier_llm_context) that were
+not scored in the original run.
+
+| Metric | Intrinsic | Hierarchical | Context-Eng | LLM-Context | Hier+Ctx | Hier+LLM |
+|---|:---:|:---:|:---:|:---:|:---:|:---:|
+| Evidence Coverage (mean) | 6.45 | **6.60** | 6.46 | 6.46 | 6.43 | 6.55 |
+| Conclusion Consistency (mean) | 4.62 | 5.92 | 4.79 | 5.39 | **6.35** | 6.10 |
+
+**Key observations:**
+
+Evidence coverage drops sharply from ~9.4 (self-judged) to ~6.5 (external judge), consistent with
+self-evaluation leniency — gpt-4o-mini was awarding high scores to its own reasoning regardless of
+specificity. The external judge applies a stricter standard: scores around 6–7 indicate partial evidence
+citation but insufficient specificity or missing metric values.
+
+Evidence coverage is flat across all six modes (6.43–6.60), confirming that the choice of governance
+architecture does not affect how thoroughly agents retrieve and cite evidence. The failure modes are
+downstream of evidence gathering.
+
+Conclusion consistency shows more meaningful variation under the external judge (4.62–6.35). The
+hierarchical combined modes (Hier+Ctx: 6.35, Hier+LLM: 6.10) score highest, suggesting that when both
+an independent auditor and explicit rules are present, the final written reasoning is more internally
+coherent. Pure intrinsic self-review scores lowest (4.62), reinforcing the anchoring finding: agents
+reach a conclusion early and construct reasoning around it rather than deriving the conclusion from the
+evidence.
 
 ---
 
